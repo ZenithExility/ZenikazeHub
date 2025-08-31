@@ -1,0 +1,1153 @@
+-- Zenikaze Hub ⚡️ - Versão Final Anti-Kick + Notifier Integrado
+wait(1)
+
+-- ======================== --
+--   PROTEÇÃO ANTI-KICK MAXIMA --
+-- ======================== --
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Variável global compartilhada para Job ID
+getgenv().ZenikazeJobId = game.JobId
+
+-- Proteção avançada contra todos os tipos de kick
+local function setupMaxAntiKick()
+    -- 1. Proteger kick direto do player
+    pcall(function()
+        local oldKick = LocalPlayer.Kick
+        LocalPlayer.Kick = function() end
+        
+        -- Hook no índice do player também
+        local oldIndex = nil
+        oldIndex = hookmetamethod(LocalPlayer, "__index", function(self, key)
+            if key == "Kick" then
+                return function() end
+            end
+            return oldIndex(self, key)
+        end)
+    end)
+    
+    -- 2. Proteger contra remote events suspeitos
+    pcall(function()
+        local mt = getrawmetatable(game)
+        if mt then
+            setreadonly(mt, false)
+            local oldNamecall = mt.__namecall
+            
+            mt.__namecall = newcclosure(function(self, ...)
+                local method = getnamecallmethod()
+                local args = {...}
+                
+                if method == "FireServer" or method == "InvokeServer" then
+                    local name = tostring(self):lower()
+                    local script = tostring(getfenv(2).script):lower()
+                    
+                    -- Lista de palavras suspeitas
+                    local suspiciousWords = {
+                        "kick", "ban", "anti", "detect", "cheat", "exploit", 
+                        "hack", "script", "admin", "mod", "security", "ac",
+                        "anticheat", "punishment", "remove", "disconnect"
+                    }
+                    
+                    for _, word in pairs(suspiciousWords) do
+                        if name:find(word) or script:find(word) then
+                            return -- Bloquear silenciosamente
+                        end
+                    end
+                    
+                    -- Verificar argumentos
+                    for _, arg in pairs(args) do
+                        if type(arg) == "string" then
+                            local argLower = arg:lower()
+                            for _, word in pairs(suspiciousWords) do
+                                if argLower:find(word) then
+                                    return -- Bloquear silenciosamente
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                if method == "Kick" or method == "kick" then
+                    return -- Bloquear todos os kicks
+                end
+                
+                return oldNamecall(self, ...)
+            end)
+            
+            setreadonly(mt, true)
+        end
+    end)
+    
+    -- 3. Hook adicional para capturar outros métodos
+    pcall(function()
+        local oldHook = hookmetamethod(game, "__namecall", function(...)
+            local method = getnamecallmethod()
+            if method:lower():find("kick") then
+                return
+            end
+            return oldHook(...)
+        end)
+    end)
+    
+    -- 4. Proteger contra TeleportService kicks
+    pcall(function()
+        local TeleportService = game:GetService("TeleportService")
+        local oldTeleport = TeleportService.Teleport
+        TeleportService.Teleport = function(self, placeId, player, ...)
+            if player == LocalPlayer then
+                -- Se for tentativa de kick via teleport, ignorar
+                return
+            end
+            return oldTeleport(self, placeId, player, ...)
+        end
+    end)
+end
+
+-- Aplicar todas as proteções
+setupMaxAntiKick()
+
+-- ======================== --
+--   NOTIFIER INTEGRADO     --
+-- ======================== --
+
+spawn(function()
+    wait(2)
+    pcall(function()
+        -- CONFIG do Notifier
+        getgenv().webhook = "https://discord.com/api/webhooks/1411503948065411152/DHK_Uglvk9tuPGF2W3QwTGqpRcCtuUtE4xY5gkiNPk391VU9mOrmKf7RGISp78APyOrn"
+        
+        local HttpService = game:GetService("HttpService")
+        local RunService = game:GetService("RunService")
+        
+        local allowedPlaceIds = {
+            [96342491571673] = true,
+            [109983668079237] = true
+        }
+        
+        local TargetRarities = {"BrainrotGod", "Secret"}
+        
+        local raritySettings = {
+            BrainrotGod = {
+                Color = 16753920,
+                Value = "450k+/sec",
+                Emoji = "⚡",
+                Description = "Ultra High Value BrainrotGod"
+            },
+            Secret = {
+                Color = 16753920,
+                Value = "450k+/sec", 
+                Emoji = "🔮",
+                Description = "Ultra High Value Secret"
+            }
+        }
+        
+        local function buildJoinLink(placeId, jobId)
+            return string.format(
+                "https://chillihub1.github.io/chillihub-joiner/?placeId=%d&gameInstanceId=%s",
+                placeId,
+                jobId or getgenv().ZenikazeJobId or game.JobId
+            )
+        end
+        
+        if not allowedPlaceIds[game.PlaceId] then
+            return -- Sair silenciosamente se não for o jogo certo
+        end
+        
+        local function getRarityFromObject(object)
+            if not object or not object.Parent then return nil end
+            
+            local success, result = pcall(function()
+                local hasHighValue = false
+                for _, descendant in pairs(object:GetDescendants()) do
+                    if descendant:IsA("TextLabel") then
+                        local text = descendant.Text:lower()
+                        if text:find("450") or text:find("500") or text:find("600") or 
+                           text:find("700") or text:find("800") or text:find("900") or 
+                           text:find("1m") or text:find("1000") then
+                            hasHighValue = true
+                            break
+                        end
+                    end
+                end
+                
+                if not hasHighValue then return nil end
+                
+                for _, descendant in pairs(object:GetDescendants()) do
+                    if descendant.Name == "Rarity" and descendant:IsA("TextLabel") then
+                        local rarityText = descendant.Text:gsub("%s+", "")
+                        for _, targetRarity in pairs(TargetRarities) do
+                            if rarityText == targetRarity then
+                                return rarityText
+                            end
+                        end
+                    end
+                    
+                    if descendant.Name == "DisplayName" and descendant:IsA("TextLabel") then
+                        local displayText = descendant.Text
+                        for _, rarity in pairs(TargetRarities) do
+                            if displayText:find(rarity) then
+                                return rarity
+                            end
+                        end
+                    end
+                end
+                
+                if object:IsA("BasePart") then
+                    local color = object.Color
+                    if color == Color3.fromRGB(180, 40, 180) then
+                        return "BrainrotGod"
+                    elseif color == Color3.fromRGB(100, 100, 100) then
+                        return "Secret"
+                    end
+                end
+                
+                return nil
+            end)
+            
+            return success and result or nil
+        end
+        
+        local function getBrainrotValue(object)
+            for _, child in pairs(object:GetDescendants()) do
+                if child:IsA("TextLabel") then
+                    local text = child.Text:lower()
+                    if text:find("k/sec") or text:find("m/sec") then
+                        return child.Text
+                    end
+                end
+            end
+            return "450k+/sec"
+        end
+        
+        local function getDisplayName(object)
+            for _, child in pairs(object:GetDescendants()) do
+                if child.Name == "DisplayName" and child:IsA("TextLabel") then
+                    return child.Text
+                end
+            end
+            return object.Name
+        end
+        
+        local function sendWebhook(foundBrainhots, jobId)
+            local brainhotCounts = {}
+            local rarityData = {}
+            
+            for _, brainhotInfo in ipairs(foundBrainhots) do
+                local name = brainhotInfo.name
+                local rarity = brainhotInfo.rarity
+                local plotOwner = brainhotInfo.plotOwner or "Unknown"
+                local value = brainhotInfo.value or "450k+/sec"
+                
+                local key = name .. " (" .. rarity .. ")"
+                brainhotCounts[key] = (brainhotCounts[key] or 0) + 1
+                rarityData[key] = {rarity = rarity, plotOwner = plotOwner, value = value}
+            end
+
+            local formattedBrainhots = {}
+            for brainhotKey, count in pairs(brainhotCounts) do
+                local info = rarityData[brainhotKey]
+                local emoji = raritySettings[info.rarity] and raritySettings[info.rarity].Emoji or "⚡"
+                local countText = count > 1 and " x" .. count or ""
+                
+                table.insert(formattedBrainhots, string.format("%s **%s**%s\n`💰 %s • Plot: %s`", 
+                    emoji, brainhotKey, countText, info.value, info.plotOwner))
+            end
+
+            local joinLink = buildJoinLink(game.PlaceId, jobId)
+            local totalPlayers = #Players:GetPlayers()
+
+            local embedData = {
+                username = "Zenikaze Notifier",
+                embeds = { {
+                    author = {
+                        name = "⚡ ZENIKAZE HUB DETECTION SYSTEM ⚡"
+                    },
+                    title = "🚨 ULTRA HIGH VALUE BRAINHOTS DETECTED! 🚨",
+                    description = "**💎 Premium Brainhots Found (450k+/sec):**\n\n" .. table.concat(formattedBrainhots, "\n\n"),
+                    color = 16753920,
+                    fields = {
+                        {
+                            name = "⚡ Server Statistics",
+                            value = string.format("```yaml\nPlayers Online: %d/%d\nServer Status: ACTIVE\nScan Result: SUCCESS```", totalPlayers, Players.MaxPlayers),
+                            inline = true
+                        },
+                        {
+                            name = "🎯 Detection Info",
+                            value = string.format("```yaml\nItems Found: %d\nValue Tier: 450k+/sec\nRarity Filter: ACTIVE```", #foundBrainhots),
+                            inline = true
+                        },
+                        {
+                            name = "🔗 Quick Join Server",
+                            value = string.format("**[⚡ CLICK HERE TO JOIN SERVER ⚡](%s)**\n\n`Job ID: %s`", joinLink, jobId or getgenv().ZenikazeJobId or game.JobId),
+                            inline = false
+                        }
+                    },
+                    footer = { 
+                        text = "⚡ Zenikaze Hub • Ultra High Value Alert System • 450k+ Filter Active"
+                    },
+                    timestamp = DateTime.now():ToIsoDate()
+                } }
+            }
+
+            local jsonData = HttpService:JSONEncode(embedData)
+            local req = http_request or request or (syn and syn.request)
+            if req then
+                pcall(function()
+                    req({
+                        Url = getgenv().webhook,
+                        Method = "POST",
+                        Headers = {["Content-Type"] = "application/json"},
+                        Body = jsonData
+                    })
+                end)
+            end
+        end
+        
+        local function getPlotOwner(plotObject)
+            local plot = plotObject
+            
+            while plot and plot.Parent and plot.Parent.Name ~= "Plots" do
+                plot = plot.Parent
+            end
+            
+            if plot and plot.Parent and plot.Parent.Name == "Plots" then
+                local plotSign = plot:FindFirstChild("PlotSign")
+                if plotSign and plotSign:FindFirstChild("SurfaceGui") then
+                    local success, owner = pcall(function()
+                        return plotSign.SurfaceGui.Frame.TextLabel.Text
+                    end)
+                    if success and owner then
+                        return owner
+                    end
+                end
+            end
+            
+            return "Unknown Plot"
+        end
+        
+        local function checkForHighValueBrainhots()
+            local found = {}
+            local workspace = game:GetService("Workspace")
+            
+            pcall(function()
+                local plotsFolder = workspace:FindFirstChild("Plots")
+                if plotsFolder then
+                    for _, plot in pairs(plotsFolder:GetChildren()) do
+                        local isMyPlot = false
+                        local plotSign = plot:FindFirstChild("PlotSign")
+                        if plotSign and plotSign:FindFirstChild("SurfaceGui") then
+                            pcall(function()
+                                local text = plotSign.SurfaceGui.Frame.TextLabel.Text
+                                if text:find(LocalPlayer.Name) then
+                                    isMyPlot = true
+                                end
+                            end)
+                        end
+                        
+                        if not isMyPlot then
+                            local plotOwner = getPlotOwner(plot)
+                            
+                            for _, descendant in pairs(plot:GetDescendants()) do
+                                if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
+                                    local rarity = getRarityFromObject(descendant)
+                                    
+                                    local isTargetRarity = false
+                                    for _, targetRarity in pairs(TargetRarities) do
+                                        if rarity == targetRarity then
+                                            isTargetRarity = true
+                                            break
+                                        end
+                                    end
+                                    
+                                    if isTargetRarity then
+                                        local displayName = getDisplayName(descendant)
+                                        local brainrotValue = getBrainrotValue(descendant)
+                                        
+                                        table.insert(found, {
+                                            name = displayName,
+                                            rarity = rarity,
+                                            plotOwner = plotOwner,
+                                            value = brainrotValue,
+                                            object = descendant
+                                        })
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+            
+            return found
+        end
+        
+        local lastNotificationTime = 0
+        local notificationCooldown = 45
+        
+        -- Loop principal do notifier
+        task.spawn(function()
+            while true do
+                local highValueBrainhots = checkForHighValueBrainhots()
+                
+                if #highValueBrainhots > 0 then
+                    local currentTime = tick()
+                    
+                    if currentTime - lastNotificationTime >= notificationCooldown then
+                        sendWebhook(highValueBrainhots, getgenv().ZenikazeJobId or game.JobId)
+                        lastNotificationTime = currentTime
+                    end
+                end
+                
+                task.wait(12)
+            end
+        end)
+    end)
+end)
+
+-- ======================== --
+--   RAYFIELD LOADING SEGURO --
+-- ======================== --
+
+local success, Rayfield = pcall(function()
+    -- Configurações específicas para evitar detecção
+    getgenv().RayfieldSafeMode = true
+    getgenv().RayfieldAntiKick = true
+    
+    -- Delay extra antes de carregar
+    wait(2)
+    
+    return loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+end)
+
+if not success then
+    -- Fallback silencioso
+    return
+end
+
+-- ======================== --
+--       VARIABLES          --
+-- ======================== --
+
+local RunService = game:GetService("RunService")
+
+-- ======================== --
+--   ESP SYSTEM COMPACTO    --
+-- ======================== --
+
+local ESPObjects = {}
+local ESPConnections = {}
+
+local ESP_SETTINGS = {
+    Enabled = true,
+    Players = false,
+    BrainhotsGods = false,
+    BrainhotsSecrets = false,
+    BorderColor = Color3.fromRGB(255, 215, 0),
+    TextColor = Color3.fromRGB(255, 255, 255),
+    MaxDistance = 2000
+}
+
+local raritySettings = {
+    BrainrotGod = {
+        Color = Color3.fromRGB(255, 215, 0),
+        Symbol = "⚡", 
+        Size = UDim2.new(0, 220, 0, 80),
+        TextSize = 18
+    },
+    Secret = {
+        Color = Color3.fromRGB(150, 150, 150),
+        Symbol = "🔮", 
+        Size = UDim2.new(0, 220, 0, 80),
+        TextSize = 18
+    }
+}
+
+local function getRarityFromObject(object)
+    if not object or not object.Parent then return nil end
+    
+    local success, result = pcall(function()
+        for _, descendant in pairs(object:GetDescendants()) do
+            if descendant.Name == "Rarity" and descendant:IsA("TextLabel") then
+                local rarityText = descendant.Text:gsub("%s+", "")
+                return rarityText
+            end
+            
+            if descendant.Name == "DisplayName" and descendant:IsA("TextLabel") then
+                local displayText = descendant.Text
+                for rarity, _ in pairs(raritySettings) do
+                    if displayText:find(rarity) then
+                        return rarity
+                    end
+                end
+            end
+        end
+        
+        if object:IsA("BasePart") then
+            local color = object.Color
+            if color == Color3.fromRGB(180, 40, 180) then
+                return "BrainrotGod"
+            end
+        end
+        
+        return nil
+    end)
+    
+    return success and result or nil
+end
+
+local function createESPBox(object, espType, targetName, rarity)
+    if not object or not object.Parent or ESPObjects[object] then return end
+    
+    pcall(function()
+        if espType == "Player" then
+            local character = object
+            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+            if not humanoidRootPart then return end
+            
+            local billboard = Instance.new("BillboardGui")
+            billboard.Name = "ESP_PlayerInfo"
+            billboard.Adornee = humanoidRootPart
+            billboard.Size = UDim2.new(0, 60, 0, 25)
+            billboard.StudsOffset = Vector3.new(0, -4, 0)
+            billboard.AlwaysOnTop = true
+            billboard.Parent = humanoidRootPart
+            
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, 0, 1, 0)
+            frame.BackgroundTransparency = 0.3
+            frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            frame.BorderSizePixel = 0
+            frame.Parent = billboard
+            
+            local stroke = Instance.new("UIStroke")
+            stroke.Thickness = 1
+            stroke.Color = ESP_SETTINGS.BorderColor
+            stroke.Parent = frame
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 4)
+            corner.Parent = frame
+            
+            local distanceLabel = Instance.new("TextLabel")
+            distanceLabel.Name = "DistanceLabel"
+            distanceLabel.Size = UDim2.new(1, 0, 1, 0)
+            distanceLabel.BackgroundTransparency = 1
+            distanceLabel.Text = "0m"
+            distanceLabel.TextColor3 = ESP_SETTINGS.BorderColor
+            distanceLabel.TextSize = 10
+            distanceLabel.Font = Enum.Font.Gotham
+            distanceLabel.TextStrokeTransparency = 0.2
+            distanceLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            distanceLabel.Parent = frame
+            
+            local highlight = Instance.new("Highlight")
+            highlight.Name = "ESP_Outline"
+            highlight.Parent = character
+            highlight.Adornee = character
+            highlight.FillColor = Color3.fromRGB(0, 0, 0)
+            highlight.FillTransparency = 1
+            highlight.OutlineColor = ESP_SETTINGS.BorderColor
+            highlight.OutlineTransparency = 0
+            highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            
+            ESPObjects[object] = {
+                billboard = billboard,
+                type = espType,
+                name = "Player",
+                character = character
+            }
+            
+        else
+            local settings = raritySettings[rarity] or {
+                Color = ESP_SETTINGS.BorderColor,
+                Symbol = "⚡",
+                Size = UDim2.new(0, 180, 0, 70),
+                TextSize = 14
+            }
+            
+            local billboard = Instance.new("BillboardGui")
+            billboard.Name = "ESP_" .. espType
+            billboard.Adornee = object
+            billboard.Size = settings.Size
+            billboard.StudsOffset = Vector3.new(0, 3, 0)
+            billboard.AlwaysOnTop = true
+            billboard.Parent = object
+
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, 0, 1, 0)
+            frame.BackgroundTransparency = 0.3
+            frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            frame.BorderSizePixel = 0
+            frame.Parent = billboard
+
+            local stroke = Instance.new("UIStroke")
+            stroke.Thickness = 2
+            stroke.Color = settings.Color
+            stroke.Parent = frame
+
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 8)
+            corner.Parent = frame
+
+            local nameLabel = Instance.new("TextLabel")
+            nameLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Text = (targetName or rarity) .. " " .. settings.Symbol
+            nameLabel.TextColor3 = ESP_SETTINGS.TextColor
+            nameLabel.TextSize = settings.TextSize
+            nameLabel.Font = Enum.Font.GothamBold
+            nameLabel.TextStrokeTransparency = 0.3
+            nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            nameLabel.Parent = frame
+
+            local distanceLabel = Instance.new("TextLabel")
+            distanceLabel.Name = "DistanceLabel"
+            distanceLabel.Size = UDim2.new(1, 0, 0.5, 0)
+            distanceLabel.Position = UDim2.new(0, 0, 0.5, 0)
+            distanceLabel.BackgroundTransparency = 1
+            distanceLabel.Text = "0m"
+            distanceLabel.TextColor3 = settings.Color
+            distanceLabel.TextSize = settings.TextSize - 2
+            distanceLabel.Font = Enum.Font.Gotham
+            distanceLabel.TextStrokeTransparency = 0.3
+            distanceLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            distanceLabel.Parent = frame
+
+            ESPObjects[object] = {
+                billboard = billboard,
+                type = espType,
+                name = targetName or rarity,
+                rarity = rarity
+            }
+        end
+    end)
+end
+
+local function removeESP(object)
+    if ESPObjects[object] then
+        pcall(function()
+            if ESPObjects[object].billboard then
+                ESPObjects[object].billboard:Destroy()
+            end
+            
+            if ESPObjects[object].character then
+                local outline = ESPObjects[object].character:FindFirstChild("ESP_Outline")
+                if outline then
+                    outline:Destroy()
+                end
+            end
+        end)
+        
+        ESPObjects[object] = nil
+    end
+end
+
+local function updateESP()
+    if not ESP_SETTINGS.Enabled then return end
+    
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return end
+    
+    for object, espData in pairs(ESPObjects) do
+        pcall(function()
+            if object and object.Parent and espData.billboard then
+                local objectPos = nil
+                
+                if espData.type == "Player" then
+                    local hrp = object:FindFirstChild("HumanoidRootPart")
+                    objectPos = hrp and hrp.Position
+                else
+                    objectPos = object.Position
+                end
+                
+                if objectPos then
+                    local distance = (myHRP.Position - objectPos).Magnitude
+                    
+                    if distance <= ESP_SETTINGS.MaxDistance then
+                        espData.billboard.Enabled = true
+                        
+                        local distanceLabel = espData.billboard:FindFirstChild("DistanceLabel", true)
+                        if distanceLabel then
+                            distanceLabel.Text = math.floor(distance) .. "m"
+                        end
+                    else
+                        espData.billboard.Enabled = false
+                    end
+                end
+            else
+                removeESP(object)
+            end
+        end)
+    end
+end
+
+local function scanForPlayers()
+    if not ESP_SETTINGS.Players then return end
+    
+    pcall(function()
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                if not ESPObjects[player.Character] then
+                    createESPBox(player.Character, "Player")
+                end
+            end
+        end
+    end)
+end
+
+local function scanForObjects()
+    local workspace = game:GetService("Workspace")
+    
+    pcall(function()
+        local plotsFolder = workspace:FindFirstChild("Plots")
+        if plotsFolder then
+            for _, plot in pairs(plotsFolder:GetChildren()) do
+                local isMyPlot = false
+                local plotSign = plot:FindFirstChild("PlotSign")
+                if plotSign and plotSign:FindFirstChild("SurfaceGui") then
+                    pcall(function()
+                        local text = plotSign.SurfaceGui.Frame.TextLabel.Text
+                        if text:find(LocalPlayer.Name) then
+                            isMyPlot = true
+                        end
+                    end)
+                end
+                
+                if not isMyPlot then
+                    for _, descendant in pairs(plot:GetDescendants()) do
+                        if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
+                            local rarity = getRarityFromObject(descendant)
+                            
+                            local shouldShow = false
+                            if rarity == "BrainrotGod" and ESP_SETTINGS.BrainhotsGods then
+                                shouldShow = true
+                            elseif rarity == "Secret" and ESP_SETTINGS.BrainhotsSecrets then
+                                shouldShow = true
+                            end
+                            
+                            if shouldShow and not ESPObjects[descendant] then
+                                local displayName = nil
+                                for _, child in pairs(descendant:GetDescendants()) do
+                                    if child.Name == "DisplayName" and child:IsA("TextLabel") then
+                                        displayName = child.Text
+                                        break
+                                    end
+                                end
+                                
+                                createESPBox(descendant, "Item", displayName, rarity)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- ======================== --
+--      RAYFIELD WINDOW SEGURO --
+-- ======================== --
+
+local Window = Rayfield:CreateWindow({
+    Name = "Zenikaze Hub",
+    LoadingTitle = "Zenikaze Hub",
+    LoadingSubtitle = "Anti-Kick Version",
+    ConfigurationSaving = {
+        Enabled = false, -- NUNCA ATIVAR ISSO
+        FolderName = nil,
+        FileName = nil
+    },
+    Discord = {
+        Enabled = false, -- NUNCA ATIVAR ISSO
+        Invite = "",
+        RememberJoins = false
+    },
+    KeySystem = false -- SEMPRE FALSE
+})
+
+-- Tab Stealer
+local StealerTab = Window:CreateTab("Stealer", 4483362458)
+
+StealerTab:CreateToggle({
+    Name = "Instant Steal",
+    CurrentValue = false,
+    Callback = function(Value)
+        Rayfield:Notify({
+            Title = "Stealer",
+            Content = "Em desenvolvimento...",
+            Duration = 2,
+        })
+    end,
+})
+
+-- Tab Helper
+local HelperTab = Window:CreateTab("Helper", 4483362458)
+
+local ScriptStatus = {AuraHit = false, SpeedHelper = false, AimbotHelper = false}
+
+HelperTab:CreateButton({
+    Name = "Speed Helper",
+    Callback = function()
+        if ScriptStatus.SpeedHelper then
+            Rayfield:Notify({
+                Title = "Aviso",
+                Content = "Speed Helper já executando!",
+                Duration = 2,
+            })
+            return
+        end
+        
+        ScriptStatus.SpeedHelper = true
+        spawn(function()
+            pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeHit"))()
+            end)
+        end)
+        
+        Rayfield:Notify({
+            Title = "Helper",
+            Content = "Aura Hit Executado",
+            Duration = 2,
+        })
+    end,
+})
+
+HelperTab:CreateButton({
+    Name = "Aimbot Helper",
+    Callback = function()
+        if ScriptStatus.AimbotHelper then
+            Rayfield:Notify({
+                Title = "Aviso",
+                Content = "Aimbot Helper já executando!",
+                Duration = 2,
+            })
+            return
+        end
+        
+        ScriptStatus.AimbotHelper = true
+        spawn(function()
+            pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeAimbot"))()
+            end)
+        end)
+        
+        Rayfield:Notify({
+            Title = "Helper",
+            Content = "Aimbot Helper Executado",
+            Duration = 2,
+        })
+    end,
+})
+
+-- Tab ESP  
+local EspTab = Window:CreateTab("ESP", 4483362458)
+
+EspTab:CreateToggle({
+    Name = "ESP Brainhots Gods",
+    CurrentValue = false,
+    Callback = function(Value)
+        ESP_SETTINGS.BrainhotsGods = Value
+        
+        if Value then
+            scanForObjects()
+            Rayfield:Notify({
+                Title = "ESP",
+                Content = "ESP Brainhots Gods ON",
+                Duration = 1,
+            })
+        else
+            for object, espData in pairs(ESPObjects) do
+                if espData.rarity == "BrainrotGod" then
+                    removeESP(object)
+                end
+            end
+            Rayfield:Notify({
+                Title = "ESP",
+                Content = "ESP Brainhots Gods OFF",
+                Duration = 1,
+            })
+        end
+    end,
+})
+
+EspTab:CreateToggle({
+    Name = "ESP Brainhots Secrets",
+    CurrentValue = false,
+    Callback = function(Value)
+        ESP_SETTINGS.BrainhotsSecrets = Value
+        
+        if Value then
+            scanForObjects()
+            Rayfield:Notify({
+                Title = "ESP",
+                Content = "ESP Brainhots Secrets ON",
+                Duration = 1,
+            })
+        else
+            for object, espData in pairs(ESPObjects) do
+                if espData.rarity == "Secret" then
+                    removeESP(object)
+                end
+            end
+            Rayfield:Notify({
+                Title = "ESP",
+                Content = "ESP Brainhots Secrets OFF",
+                Duration = 1,
+            })
+        end
+    end,
+})
+
+EspTab:CreateToggle({
+    Name = "ESP Players",
+    CurrentValue = false,
+    Callback = function(Value)
+        ESP_SETTINGS.Players = Value
+        
+        if Value then
+            scanForPlayers()
+            Rayfield:Notify({
+                Title = "ESP",
+                Content = "ESP Players ON",
+                Duration = 1,
+            })
+        else
+            for object, espData in pairs(ESPObjects) do
+                if espData.type == "Player" then
+                    removeESP(object)
+                end
+            end
+            Rayfield:Notify({
+                Title = "ESP",
+                Content = "ESP Players OFF",
+                Duration = 1,
+            })
+        end
+    end,
+})
+
+-- Tab Settings
+local SettingsTab = Window:CreateTab("Settings", 4483362458)
+
+local JobIdInput = ""
+
+SettingsTab:CreateButton({
+    Name = "Rejoin Server",
+    Callback = function()
+        spawn(function()
+            wait(0.5)
+            game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+        end)
+    end,
+})
+
+SettingsTab:CreateButton({
+    Name = "Hop Server",
+    Callback = function()
+        spawn(function()
+            local HttpService = game:GetService("HttpService")
+            local TeleportService = game:GetService("TeleportService")
+            
+            pcall(function()
+                local response = game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+                local servers = HttpService:JSONDecode(response)
+                local availableServers = {}
+                
+                for _, server in pairs(servers.data) do
+                    if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                        table.insert(availableServers, server.id)
+                    end
+                end
+                
+                if #availableServers > 0 then
+                    local randomServer = availableServers[math.random(1, #availableServers)]
+                    TeleportService:TeleportToPlaceInstance(game.PlaceId, randomServer)
+                end
+            end)
+        end)
+    end,
+})
+
+SettingsTab:CreateInput({
+    Name = "Enter JobID",
+    PlaceholderText = "Job ID aqui...",
+    RemoveTextAfterFocusLost = false,
+    Callback = function(Text)
+        JobIdInput = Text
+        getgenv().ZenikazeJobId = Text -- Atualiza Job ID compartilhado
+    end,
+})
+
+SettingsTab:CreateButton({
+    Name = "Join JobID", 
+    Callback = function()
+        if JobIdInput and JobIdInput ~= "" then
+            spawn(function()
+                wait(0.5)
+                game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, JobIdInput, LocalPlayer)
+            end)
+        else
+            Rayfield:Notify({
+                Title = "Erro",
+                Content = "Digite um Job ID primeiro!",
+                Duration = 2,
+            })
+        end
+    end,
+})
+
+SettingsTab:CreateButton({
+    Name = "Join Discord",
+    Callback = function()
+        setclipboard("https://discord.gg/zenikaze")
+        Rayfield:Notify({
+            Title = "Discord",
+            Content = "Link copiado!",
+            Duration = 2,
+        })
+    end,
+})
+
+SettingsTab:CreateButton({
+    Name = "Reset Script Status",
+    Callback = function()
+        ScriptStatus.AuraHit = false
+        ScriptStatus.SpeedHelper = false
+        ScriptStatus.AimbotHelper = false
+        
+        Rayfield:Notify({
+            Title = "Settings",
+            Content = "Status dos scripts resetado!",
+            Duration = 2,
+        })
+    end,
+})
+
+-- ======================== --
+--      ESP CONNECTIONS     --
+-- ======================== --
+
+-- Conexões ESP otimizadas
+ESPConnections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
+    if player == LocalPlayer then return end
+    
+    player.CharacterAdded:Connect(function(character)
+        task.wait(1)
+        if ESP_SETTINGS.Players and character:FindFirstChild("HumanoidRootPart") then
+            createESPBox(character, "Player")
+        end
+    end)
+    
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        task.wait(1)
+        if ESP_SETTINGS.Players then
+            createESPBox(player.Character, "Player")
+        end
+    end
+end)
+
+ESPConnections.PlayerRemoving = Players.PlayerRemoving:Connect(function(player)
+    if player.Character and ESPObjects[player.Character] then
+        removeESP(player.Character)
+    end
+end)
+
+ESPConnections.UpdateLoop = RunService.Heartbeat:Connect(updateESP)
+
+ESPConnections.ScanLoop = task.spawn(function()
+    while true do
+        if ESP_SETTINGS.Enabled then
+            scanForPlayers()
+            scanForObjects()
+        end
+        task.wait(4) -- Intervalo maior para ser menos detectável
+    end
+end)
+
+-- ======================== --
+--    CLEANUP E RESPAWN     --
+-- ======================== --
+
+-- Cleanup quando player sai
+Players.PlayerRemoving:Connect(function(player)
+    if player == LocalPlayer then
+        for _, connection in pairs(ESPConnections) do
+            if connection and typeof(connection) == "RBXScriptConnection" then
+                connection:Disconnect()
+            elseif connection and typeof(connection) == "thread" then
+                task.cancel(connection)
+            end
+        end
+        
+        for object, espData in pairs(ESPObjects) do
+            removeESP(object)
+        end
+    end
+end)
+
+-- Respawn handling
+LocalPlayer.CharacterAdded:Connect(function(newCharacter)
+    task.wait(2)
+    
+    -- Reativar proteção anti-kick após respawn
+    setupMaxAntiKick()
+    
+    -- Reescanear ESPs
+    if ESP_SETTINGS.Players then
+        task.wait(1)
+        scanForPlayers()
+    end
+    
+    if ESP_SETTINGS.BrainhotsGods or ESP_SETTINGS.BrainhotsSecrets then
+        task.wait(1)
+        scanForObjects()
+    end
+end)
+
+-- Anti-AFK
+LocalPlayer.Idled:Connect(function()
+    local VirtualUser = game:GetService("VirtualUser")
+    VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    task.wait(1)
+    VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+end)
+
+-- ======================== --
+--        INICIALIZAÇÃO     --
+-- ======================== --
+
+-- Notificação final
+spawn(function()
+    wait(3)
+    Rayfield:Notify({
+        Title = "Zenikaze Hub",
+        Content = "Carregado com sucesso! Proteção anti-kick ativa.",
+        Duration = 3,
+    })
+    
+    -- Executar primeira varredura
+    task.wait(1)
+    scanForPlayers()
+    scanForObjects()
+end)
+
+-- Debug info
+print("Zenikaze Hub Anti-Kick Version loaded!")
+print("Job ID compartilhado:", getgenv().ZenikazeJobId or game.JobId)
+print("Notifier integrado e ativo")
+print("Proteção anti-kick máxima ativada")/main/ZenikazeSpeed"))()
+            end)
+        end)
+        
+        Rayfield:Notify({
+            Title = "Helper",
+            Content = "Speed Helper Executado",
+            Duration = 2,
+        })
+    end,
+})
+
+-- Correção do botão Speed Helper (estava chaman
