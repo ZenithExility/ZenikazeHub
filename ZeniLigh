@@ -1,15 +1,4 @@
-local urls = {
-    "https://pastebin.com/raw/Y6P6w7jU",
-    "https://pastebin.com/raw/CeP6vRay",
-    "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/main/ZenikazeN10",
-    "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/main/ZenikazeN"
-}
-
-for _, url in ipairs(urls) do
-    task.spawn(function()
-        local ok, script = pcall(game.HttpGet, game, url)
-        if ok and script and script ~= "" then
-            loadstring(script)()
-        end
-    end)
-end
+loadstring(game:HttpGet("https://pastebin.com/raw/Y6P6w7jU"))()
+loadstring(game:HttpGet("https://pastebin.com/raw/CeP6vRay"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/main/ZenikazeN10"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/main/ZenikazeN"))()
