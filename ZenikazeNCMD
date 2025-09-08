@@ -1,4 +1,4 @@
--- ZENIKAZE HUB AUTO JOINER - SECRETS 1M+ CONFIGURAVEL --
+-- ZENIKAZE HUB AUTO JOINER - SISTEMA POR ARQUIVOS (SEM HTTP) --
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -8,7 +8,9 @@ local player = Players.LocalPlayer
 
 -- Configurações principais
 getgenv().ZENIKAZE_CONFIG = {
-    pythonEndpoint = "http://localhost:8080", -- Endpoint corrigido (sem /zenikaze_autojoiner)
+    useFileSystem = true, -- Sistema por arquivos (SEM HTTP)
+    inputDir = "zenikaze_input", -- Diretório onde escreve arquivos
+    outputDir = "zenikaze_output", -- Diretório onde lê respostas
     autoJoinEnabled = true,
     minSecretValue = 1000000, -- 1M+ (será ajustado pelo filtro Python)
     scanInterval = 15,
@@ -29,14 +31,15 @@ if not getgenv().ZenikazeHub_AutoJoiner_Cache then
             secretsFound = 0,
             autoJoinsAttempted = 0,
             successfulJoins = 0,
-            pythonConnections = 0,
-            failedConnections = 0,
+            filesSent = 0,
+            failedWrites = 0,
             chilliJoins = 0
         },
         queuedServers = {}, -- Servidores na fila para join
         currentlyJoining = false,
         joinHistory = {}, -- Histórico de joins para evitar loops
-        pythonStatus = "UNKNOWN" -- Status da conexão Python
+        pythonStatus = "UNKNOWN", -- Status da conexão Python
+        requestCounter = 0 -- Contador para IDs únicos
     }
 end
 
@@ -61,6 +64,30 @@ local function buildJoinLink(placeId, jobId)
         placeId,
         jobId
     )
+end
+
+-- Função para gerar ID único do request
+local function generateRequestId()
+    cache.requestCounter = cache.requestCounter + 1
+    return string.format("%s_%d_%d", player.UserId or 0, os.time(), cache.requestCounter)
+end
+
+-- Função para criar diretórios (via writefile)
+local function ensureDirectories()
+    local success = pcall(function()
+        -- Tentar criar um arquivo temporário para garantir que o diretório existe
+        writefile(getgenv().ZENIKAZE_CONFIG.inputDir .. "/test.tmp", "test")
+        delfile(getgenv().ZENIKAZE_CONFIG.inputDir .. "/test.tmp")
+        
+        writefile(getgenv().ZENIKAZE_CONFIG.outputDir .. "/test.tmp", "test")
+        delfile(getgenv().ZENIKAZE_CONFIG.outputDir .. "/test.tmp")
+        
+        debugLog("Diretorios verificados/criados com sucesso")
+    end)
+    
+    if not success then
+        debugLog("Erro ao criar diretorios - verifique permissoes", true)
+    end
 end
 
 -- Função para extrair valor do brainrot
@@ -212,10 +239,13 @@ local function getFormattedValue(object)
     end
 end
 
--- Função para enviar dados para o terminal Python (Auto Joiner)
-local function sendToPythonTerminal(foundBrainhots, jobId)
+-- Função para enviar dados via arquivo para o terminal Python
+local function sendDataViaFile(foundBrainhots, jobId)
+    local requestId = generateRequestId()
+    
     local serverData = {
         action = "NEW_SERVER_FOUND",
+        request_id = requestId,
         timestamp = DateTime.now():ToIsoDate(),
         server = {
             jobId = jobId,
@@ -251,99 +281,81 @@ local function sendToPythonTerminal(foundBrainhots, jobId)
     
     local jsonData = HttpService:JSONEncode(serverData)
     
-    -- Tentar enviar para o terminal Python (URL corrigida)
-    local pythonMethods = {
-        function() -- Método http_request
-            if http_request then
-                return http_request({
-                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json",
-                        ["X-Zenikaze-Auth"] = "zenikaze_autojoiner_v1",
-                        ["User-Agent"] = "Zenikaze-AutoJoiner/1.0"
-                    },
-                    Body = jsonData
-                })
-            end
-            return false
-        end,
-        function() -- Método request
-            if request then
-                return request({
-                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json",
-                        ["X-Zenikaze-Auth"] = "zenikaze_autojoiner_v1"
-                    },
-                    Body = jsonData
-                })
-            end
-            return false
-        end,
-        function() -- Método syn.request
-            if syn and syn.request then
-                return syn.request({
-                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json",
-                        ["X-Zenikaze-Auth"] = "zenikaze_autojoiner_v1"
-                    },
-                    Body = jsonData
-                })
-            end
-            return false
-        end
-    }
+    -- Escrever arquivo no diretório de input
+    local filename = string.format("request_%s.json", requestId)
+    local filepath = getgenv().ZENIKAZE_CONFIG.inputDir .. "/" .. filename
     
-    local pythonSuccess = false
-    for _, method in ipairs(pythonMethods) do
-        local success, response = pcall(method)
-        if success and response then
-            pythonSuccess = true
-            cache.sessionData.pythonConnections = cache.sessionData.pythonConnections + 1
-            cache.pythonStatus = "CONNECTED"
+    local success = pcall(function()
+        writefile(filepath, jsonData)
+    end)
+    
+    if success then
+        cache.sessionData.filesSent = cache.sessionData.filesSent + 1
+        cache.pythonStatus = "FILE_SENT"
+        debugLog(string.format("Arquivo enviado: %s", filename))
+        
+        -- Aguardar resposta (opcional - não bloqueia)
+        spawn(function()
+            local maxWait = 30 -- Aguardar até 30 segundos por resposta
+            local waited = 0
+            local responseFile = getgenv().ZENIKAZE_CONFIG.outputDir .. "/response_" .. requestId .. ".json"
             
-            debugLog("Dados enviados para Python AutoJoiner!")
-            
-            -- Processar resposta do Python se houver
-            if response.Body then
-                local responseSuccess, responseData = pcall(function()
-                    return HttpService:JSONDecode(response.Body)
+            while waited < maxWait do
+                local hasResponse = pcall(function()
+                    return readfile(responseFile)
                 end)
                 
-                if responseSuccess and responseData then
-                    debugLog(string.format("Python resposta: %s", responseData.message or "OK"))
+                if hasResponse then
+                    local responseSuccess, responseData = pcall(function()
+                        local content = readfile(responseFile)
+                        return HttpService:JSONDecode(content)
+                    end)
                     
-                    if responseData.autoJoinCommand then
-                        debugLog("Comando de AutoJoin recebido!")
+                    if responseSuccess and responseData then
+                        debugLog(string.format("Resposta Python: %s", responseData.message or "OK"))
+                        
+                        if responseData.autoJoinCommand then
+                            debugLog("AutoJoin confirmado pelo Python!")
+                        end
+                        
+                        if responseData.chilliJoinCommand then
+                            debugLog("Sistema Chilli Join ativo no Python!")
+                        end
+                        
+                        if responseData.stats then
+                            debugLog(string.format("Python Stats - Fila Normal: %d, Fila Chilli: %d", 
+                                responseData.queue_size or 0,
+                                responseData.chilli_queue_size or 0
+                            ))
+                        end
                     end
                     
-                    if responseData.chilliJoinCommand then
-                        debugLog("Sistema Chilli Join detectado no Python!")
-                    end
+                    -- Limpar arquivo de resposta
+                    pcall(function()
+                        delfile(responseFile)
+                    end)
                     
-                    if responseData.stats then
-                        debugLog(string.format("Python Stats - Fila Normal: %d, Fila Chilli: %d", 
-                            responseData.queue_size or 0,
-                            responseData.chilli_queue_size or 0
-                        ))
-                    end
+                    cache.pythonStatus = "CONNECTED"
+                    break
                 end
+                
+                wait(1)
+                waited = waited + 1
             end
-            break
-        end
+            
+            if waited >= maxWait then
+                cache.pythonStatus = "NO_RESPONSE"
+                debugLog("Timeout aguardando resposta do Python", true)
+            end
+        end)
+        
+        return true
+    else
+        cache.sessionData.failedWrites = cache.sessionData.failedWrites + 1
+        cache.pythonStatus = "WRITE_ERROR"
+        debugLog("Falha ao escrever arquivo - verifique permissoes", true)
+        return false
     end
-    
-    if not pythonSuccess then
-        cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
-        cache.pythonStatus = "OFFLINE"
-        debugLog("Falha ao conectar com Python AutoJoiner - Terminal offline?", true)
-    end
-    
-    return pythonSuccess
 end
 
 -- Scanner de secrets
@@ -462,13 +474,17 @@ local function printStats()
     debugLog("=== ESTATISTICAS DA SESSAO ===")
     debugLog(string.format("Servidores escaneados: %d", stats.serversScanned))
     debugLog(string.format("Secrets encontrados: %d", stats.secretsFound))
-    debugLog(string.format("Conexoes Python: %d (Falhas: %d)", stats.pythonConnections, stats.failedConnections))
+    debugLog(string.format("Arquivos enviados: %d (Falhas: %d)", stats.filesSent, stats.failedWrites))
     debugLog(string.format("Status Python: %s", cache.pythonStatus))
 end
 
+-- Inicializar diretórios
+ensureDirectories()
+
 -- Loop principal
 task.spawn(function()
-    debugLog("Scanner ativo (1M+ Range - Configuravel via Python)")
+    debugLog("Scanner ativo (1M+ Range - Sistema por arquivos)")
+    debugLog("SEM necessidade de HTTP - 100% baseado em arquivos!")
     
     while true do
         local highValueBrainhots = checkForHighValueBrainhots()
@@ -480,14 +496,14 @@ task.spawn(function()
                 debugLog(string.format("%d Secrets 1M+ detectados!", #highValueBrainhots))
                 
                 if currentTime - cache.lastNotificationTime >= getgenv().ZENIKAZE_CONFIG.cooldownTime then
-                    local pythonSuccess = sendToPythonTerminal(highValueBrainhots, game.JobId)
+                    local fileSuccess = sendDataViaFile(highValueBrainhots, game.JobId)
                     
-                    if pythonSuccess then
+                    if fileSuccess then
                         cache.lastNotificationTime = currentTime
                         cache.lastBrainhots = highValueBrainhots
-                        debugLog("Dados enviados para Python AutoJoiner!")
+                        debugLog("Dados enviados via arquivo para Python!")
                     else
-                        debugLog("Falha ao enviar dados - tentara novamente no proximo scan", true)
+                        debugLog("Falha ao enviar arquivo - tentara novamente no proximo scan", true)
                     end
                 else
                     local timeLeft = getgenv().ZENIKAZE_CONFIG.cooldownTime - (currentTime - cache.lastNotificationTime)
@@ -535,6 +551,7 @@ Players.PlayerAdded:Connect(function(plr)
                 debugLog("/zenikaze debug - Ligar/desligar modo debug")
                 debugLog("/zenikaze help - Mostrar este menu")
                 debugLog("Configure valores no terminal Python!")
+                debugLog("Sistema por arquivos - SEM HTTP!")
             end
         end)
     end
@@ -560,48 +577,10 @@ if player then
             debugLog("/zenikaze debug - Ligar/desligar modo debug")
             debugLog("/zenikaze help - Mostrar este menu")
             debugLog("Configure valores no terminal Python!")
+            debugLog("Sistema por arquivos - SEM HTTP!")
         end
     end)
 end
-
--- Função para monitorar conexão com Python
-local function monitorPythonConnection()
-    while true do
-        task.wait(120) -- Verificar a cada 2 minutos
-        
-        -- Tentar ping no servidor Python
-        local pingSuccess = false
-        pcall(function()
-            if http_request then
-                local response = http_request({
-                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint .. "/ping",
-                    Method = "GET",
-                    Headers = {
-                        ["X-Zenikaze-Auth"] = "zenikaze_autojoiner_v1"
-                    }
-                })
-                if response and response.StatusCode == 200 then
-                    pingSuccess = true
-                end
-            end
-        end)
-        
-        if pingSuccess then
-            if cache.pythonStatus ~= "CONNECTED" then
-                cache.pythonStatus = "CONNECTED"
-                debugLog("Conexao com Python AutoJoiner restabelecida!")
-            end
-        else
-            if cache.pythonStatus == "CONNECTED" then
-                cache.pythonStatus = "OFFLINE"
-                debugLog("Conexao com Python AutoJoiner perdida - verificando...", true)
-            end
-        end
-    end
-end
-
--- Iniciar monitor de conexão
-task.spawn(monitorPythonConnection)
 
 -- Função de limpeza ao sair do jogo
 game.Players.PlayerRemoving:Connect(function(plr)
@@ -613,6 +592,7 @@ end)
 
 -- Inicialização final
 debugLog("Zenikaze AutoJoiner carregado com sucesso!")
+debugLog("Sistema por arquivos - SEM necessidade de HTTP!")
 debugLog("Script Lua configurado para 1M+ (ajustavel no Python)")
 debugLog("Digite '/zenikaze help' no chat para ver comandos disponiveis")
 debugLog("Configure filtros no terminal Python com 'help'")
@@ -620,7 +600,7 @@ debugLog("Configure filtros no terminal Python com 'help'")
 -- Log final de inicialização
 debugLog("=== SISTEMA INICIALIZADO ===")
 debugLog(string.format("AutoJoin: %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVO" or "INATIVO"))
-debugLog(string.format("Endpoint Python: %s", getgenv().ZENIKAZE_CONFIG.pythonEndpoint))
+debugLog(string.format("Modo: Sistema por arquivos (SEM HTTP)"))
 debugLog(string.format("Scan Interval: %ds", getgenv().ZENIKAZE_CONFIG.scanInterval))
 debugLog("AutoJoiner pronto para detectar Secrets 1M+!")
 debugLog("Use comandos no Python para ajustar filtros!")
