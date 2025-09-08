@@ -1,5 +1,5 @@
 -- Scanner de secrets (MELHORADO)
-    local function checkForHighValueBrainhots()
+local function checkForHighValueBrainhots()
     local found = {}
     local totalScanned = 0
     local totalSecrets = 0
@@ -224,11 +224,11 @@ local function getFormattedValue(object)
     end
 end
 
--- Função para enviar dados para o sistema híbrido Python
+-- Função para enviar dados para o sistema híbrido Python (SIMPLIFICADA)
 local function sendToHybridSystem(foundBrainhots, jobId)
     local serverData = {
         action = "NEW_SERVER_FOUND",
-        timestamp = DateTime.now():ToIsoDate(),
+        timestamp = DateTime.now and DateTime.now():ToIsoDate() or "2025-01-01T00:00:00Z",
         server = {
             jobId = jobId,
             placeId = game.PlaceId,
@@ -242,23 +242,257 @@ local function sendToHybridSystem(foundBrainhots, jobId)
             highestValue = 0,
             sessionData = cache.sessionData
         },
-        autoJoinReady = getgenv().ZENIKAZE_CONFIG.autoJoinEnabled,
+        autoJoinReady = env.ZENIKAZE_CONFIG.autoJoinEnabled,
         client_type = "roblox_lua_hybrid"
     }
     
     -- Processar secrets encontrados
-    for _, brainhotInfo in ipairs(foundBrainhots) do
-        local rawValue = getBrainrotValue(brainhotInfo.object) or 0
+    for i = 1, #foundBrainhots do
+        local brainhotInfo = foundBrainhots[i]
+        local rawValue = brainhotInfo.rawValue or 0
+        
         if rawValue > serverData.statistics.highestValue then
             serverData.statistics.highestValue = rawValue
         end
         
-        table.insert(serverData.secrets, {
+        local secretData = {
             name = brainhotInfo.name,
             rarity = brainhotInfo.rarity,
             value = brainhotInfo.value,
             rawValue = rawValue,
-            formattedValue = getFormattedValue(brainhotInfo.object)
+            formattedValue = brainhotInfo.value
+        }
+        
+        table.insert(serverData.secrets, secretData)
+    end
+    
+    local jsonData
+    local success, result = pcall(function()
+        return HttpService:JSONEncode(serverData)
+    end)
+    
+    if not success then
+        debugLog("Erro ao converter dados para JSON: " .. tostring(result), true)
+        return false
+    end
+    
+    jsonData = result
+    
+    -- Tentar enviar para o sistema híbrido Python
+    local hybridMethods = {}
+    
+    -- Método 1: http_request
+    if http_request then
+        table.insert(hybridMethods, function()
+            return http_request({
+                Url = env.ZENIKAZE_CONFIG.pythonEndpoint,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["X-Source"] = "zenikaze-lua-hybrid",
+                    ["User-Agent"] = "Zenikaze-Hybrid/1.0"
+                },
+                Body = jsonData
+            })
+        end)
+    end
+    
+    -- Método 2: request
+    if request then
+        table.insert(hybridMethods, function()
+            return request({
+                Url = env.ZENIKAZE_CONFIG.pythonEndpoint,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["X-Source"] = "zenikaze-lua-hybrid"
+                },
+                Body = jsonData
+            })
+        end)
+    end
+    
+    -- Método 3: syn.request
+    if syn and syn.request then
+        table.insert(hybridMethods, function()
+            return syn.request({
+                Url = env.ZENIKAZE_CONFIG.pythonEndpoint,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["X-Source"] = "zenikaze-lua-hybrid"
+                },
+                Body = jsonData
+            })
+        end)
+    end
+    
+    local hybridSuccess = false
+    
+    for i = 1, #hybridMethods do
+        local method = hybridMethods[i]
+        local success, response = pcall(method)
+        
+        if success and response then
+            hybridSuccess = true
+            cache.sessionData.hybridConnections = cache.sessionData.hybridConnections + 1
+            cache.hybridSystemStatus = "CONNECTED"
+            
+            debugLog("Dados enviados para Sistema Híbrido Python!")
+            
+            -- Processar resposta do sistema híbrido
+            if response.Body then
+                local responseSuccess, responseData = pcall(function()
+                    return HttpService:JSONDecode(response.Body)
+                end)
+                
+                if responseSuccess and responseData then
+                    debugLog(string.format("Sistema Híbrido resposta: %s", responseData.message or "OK"))
+                    
+                    if responseData.is_chilli then
+                        debugLog("🔥 Sistema detectou CHILLI JOIN! 🔥")
+                        debugLog("O Chilli Joiner será aberto automaticamente!")
+                        cache.sessionData.commandsReceived = cache.sessionData.commandsReceived + 1
+                    end
+                    
+                    if responseData.commands_executed then
+                        debugLog("Comandos externos executados no sistema!")
+                        cache.sessionData.commandsReceived = cache.sessionData.commandsReceived + 1
+                    end
+                    
+                    if responseData.highest_value then
+                        debugLog(string.format("Maior valor processado: %s", getFormattedValueFromNumber(responseData.highest_value)))
+                    end
+                    
+                    if responseData.secrets_approved and responseData.secrets_total then
+                        debugLog(string.format("Filtros aplicados: %d/%d secrets aprovados", responseData.secrets_approved, responseData.secrets_total))
+                    end
+                    
+                    if responseData.best_secret then
+                        local best = responseData.best_secret
+                        debugLog(string.format("Melhor secret: %s [%s] - %s", best.name or "Unknown", best.rarity or "Unknown", best.formattedValue or "Unknown"))
+                    end
+                end
+            end
+            break
+        end
+    end
+    
+    if not hybridSuccess then
+        cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
+        cache.hybridSystemStatus = "OFFLINE"
+        debugLog("Falha ao conectar com Sistema Híbrido Python - Sistema offline?", true)
+    end
+    
+    return hybridSuccess
+end
+
+-- Scanner de secrets (SIMPLIFICADO E ROBUSTO)
+local function checkForHighValueBrainhots()
+    local found = {}
+    local totalScanned = 0
+    local totalSecrets = 0
+    
+    local success, error_msg = pcall(function()
+        local workspace = game:GetService("Workspace")
+        local plotsFolder = workspace:FindFirstChild("Plots")
+        
+        if not plotsFolder then 
+            debugLog("Pasta 'Plots' não encontrada no Workspace")
+            return 
+        end
+        
+        local plots = plotsFolder:GetChildren()
+        debugLog(string.format("Iniciando scan em %d plots...", #plots))
+        
+        for plotIndex = 1, #plots do
+            local plot = plots[plotIndex]
+            local isMyPlot = false
+            
+            -- Verificar se é meu plot (SIMPLIFICADO)
+            local plotSignSuccess = pcall(function()
+                local plotSign = plot:FindFirstChild("PlotSign")
+                if plotSign then
+                    local surfaceGui = plotSign:FindFirstChild("SurfaceGui")
+                    if surfaceGui then
+                        local frame = surfaceGui:FindFirstChild("Frame")
+                        if frame then
+                            local textLabel = frame:FindFirstChild("TextLabel")
+                            if textLabel and textLabel.Text and string.find(textLabel.Text, player.Name) then
+                                isMyPlot = true
+                                debugLog(string.format("Pulando meu plot: %s", plot.Name))
+                            end
+                        end
+                    end
+                end
+            end)
+            
+            if not isMyPlot then
+                debugLog(string.format("Escaneando plot %d: %s", plotIndex, plot.Name))
+                
+                local descendants = plot:GetDescendants()
+                
+                for i = 1, #descendants do
+                    local descendant = descendants[i]
+                    
+                    if (descendant.ClassName == "Part" or descendant.ClassName == "MeshPart") and descendant.Parent then
+                        totalScanned = totalScanned + 1
+                        
+                        local rarity = getRarityFromObject(descendant)
+                        
+                        if rarity then
+                            totalSecrets = totalSecrets + 1
+                            local displayName = getDisplayName(descendant)
+                            local brainrotValue = getBrainrotValue(descendant)
+                            local formattedValue = getFormattedValue(descendant)
+                            
+                            debugLog(string.format("Secret encontrado: %s [%s] - %s (%d)", displayName, rarity, formattedValue, brainrotValue))
+                            
+                            -- Verificar se passa no filtro de valor
+                            if isHighValueBrainrot(descendant, rarity) then
+                                local brainrotData = {
+                                    name = displayName,
+                                    rarity = rarity,
+                                    value = formattedValue,
+                                    rawValue = brainrotValue,
+                                    object = descendant
+                                }
+                                
+                                table.insert(found, brainrotData)
+                                
+                                debugLog(string.format(">>> APROVADO: %s [%s] - %s", displayName, rarity, formattedValue), false)
+                            else
+                                debugLog(string.format(">>> Rejeitado: %s [%s] - %s (abaixo do minimo)", displayName, rarity, formattedValue))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    
+    if not success then
+        debugLog("Erro durante o scan: " .. tostring(error_msg), true)
+    end
+    
+    cache.sessionData.secretsFound = cache.sessionData.secretsFound + #found
+    
+    debugLog(string.format("=== RESULTADO DO SCAN ==="))
+    debugLog(string.format("Objetos escaneados: %d", totalScanned))
+    debugLog(string.format("Secrets totais: %d", totalSecrets))
+    debugLog(string.format("Secrets aprovados: %d", #found))
+    debugLog(string.format("Valor minimo: %s", getFormattedValueFromNumber(env.ZENIKAZE_CONFIG.minSecretValue)))
+    
+    if #found > 0 then
+        debugLog("SECRETS APROVADOS:")
+        for i = 1, #found do
+            local brainrot = found[i]
+            debugLog(string.format("  %d. %s [%s] - %s", i, brainrot.name, brainrot.rarity, brainrot.value))
+        end
+    end
+    
+    return found
+enddValue = getFormattedValue(brainhotInfo.object)
         })
     end
     
