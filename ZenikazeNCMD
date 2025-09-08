@@ -10,10 +10,10 @@ local player = Players.LocalPlayer
 -- Configurações principais
 getgenv().ZENIKAZE_CONFIG = {
     -- SUBSTITUA COM SEU PROJETO FIREBASE
-    firebaseUrl = "https://zenikaze-hub-default-rtdb.firebaseio.com/",
+    firebaseUrl = "https://zenikaze-hub-default-rtdb.firebaseio.com",
     
     -- Configurações do sistema
-    autoJoinEnabled = false, -- INICIA DESLIGADO
+    autoJoinEnabled = true, -- INICIA LIGADO AUTOMATICAMENTE
     minSecretValue = 1000000, -- 1M+
     scanInterval = 15,
     cooldownTime = 60,
@@ -60,18 +60,6 @@ local function generateUserId()
     return getgenv().ZENIKAZE_CONFIG.userId
 end
 
--- Função para logs
-local function debugLog(message, isError)
-    local prefix = isError and "[X] Zenikaze ERROR:" or "[*] Zenikaze:"
-    local fullMessage = string.format("%s %s", prefix, message)
-    
-    print(fullMessage)
-    
-    if getgenv().ZENIKAZE_CONFIG.debugMode then
-        warn(string.format("[DEBUG %s] %s", os.date("%H:%M:%S"), message))
-    end
-end
-
 -- Verificar se é servidor privado
 local function isPrivateServer()
     local success, result = pcall(function()
@@ -110,7 +98,7 @@ local function buildJoinLink(placeId, jobId)
     )
 end
 
--- Função para extrair valor do brainrot (CORRIGIDA para detectar valores menores)
+-- Função para extrair valor do brainrot
 local function getBrainrotValue(object)
     if not object or not object.Parent then return 0 end
     
@@ -163,7 +151,7 @@ local function getBrainrotValue(object)
     return success and value or 0
 end
 
--- Função para verificar se é Secret com valor suficiente (CORRIGIDA)
+-- Função para verificar se é Secret com valor suficiente
 local function isHighValueBrainrot(object, rarity)
     if not object or not object.Parent then return false end
     
@@ -240,16 +228,14 @@ local function getFormattedValue(object)
     end
 end
 
--- Função para enviar dados para a nuvem (CORRIGIDA)
+-- Função para enviar dados para a nuvem
 local function sendToCloud(foundBrainhots, jobId)
     -- Verificar se deve evitar servers privados/lotados
     if getgenv().ZENIKAZE_CONFIG.avoidPrivateServers and isPrivateServer() then
-        debugLog("Server privado detectado - Não enviando para cloud", true)
         return false
     end
     
     if isServerCrowded() then
-        debugLog("Server lotado detectado - Não enviando para cloud", true)
         return false
     end
     
@@ -321,7 +307,6 @@ local function sendToCloud(foundBrainhots, jobId)
     local cloudMethods = {
         function() -- Método http_request
             if http_request then
-                -- Enviar dados do servidor
                 local serverResponse = http_request({
                     Url = firebaseEndpoint,
                     Method = "PUT",
@@ -331,7 +316,6 @@ local function sendToCloud(foundBrainhots, jobId)
                     Body = jsonData
                 })
                 
-                -- Atualizar dados do usuário
                 local userResponse = http_request({
                     Url = userEndpoint,
                     Method = "PATCH",
@@ -402,9 +386,6 @@ local function sendToCloud(foundBrainhots, jobId)
             cloudSuccess = true
             cache.sessionData.cloudConnections = cache.sessionData.cloudConnections + 1
             cache.cloudStatus = "CONNECTED"
-            
-            debugLog("Dados enviados para a nuvem (Firebase)!")
-            debugLog(string.format("URL: %s/zenikaze/servers/%s", getgenv().ZENIKAZE_CONFIG.firebaseUrl, userId))
             break
         end
     end
@@ -412,13 +393,12 @@ local function sendToCloud(foundBrainhots, jobId)
     if not cloudSuccess then
         cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
         cache.cloudStatus = "OFFLINE"
-        debugLog("Falha ao conectar com a nuvem - Verifique sua URL do Firebase", true)
     end
     
     return cloudSuccess
 end
 
--- Scanner de secrets (mesmo código anterior)
+-- Scanner de secrets
 local function checkForHighValueBrainhots()
     if not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled then
         return {}
@@ -477,10 +457,6 @@ local function checkForHighValueBrainhots()
     
     cache.sessionData.secretsFound = cache.sessionData.secretsFound + #found
     
-    if getgenv().ZENIKAZE_CONFIG.debugMode then
-        debugLog(string.format("Escaneados: %d objetos, Encontrados: %d secrets 1M+", totalScanned, #found))
-    end
-    
     return found
 end
 
@@ -491,7 +467,6 @@ if cache.serverJobId ~= game.JobId then
     cache.lastNotificationTime = 0
     cache.sessionData.serversScanned = cache.sessionData.serversScanned + 1
     cache.cloudStatus = "UNKNOWN"
-    debugLog("Novo servidor detectado - Sistema resetado")
 end
 
 -- Função para gerar ID único do brainrot
@@ -530,26 +505,8 @@ local function brainhotsChanged(currentBrainhots)
     return false
 end
 
--- Função para exibir estatísticas
-local function printStats()
-    local stats = cache.sessionData
-    debugLog("=== ESTATISTICAS DA SESSAO ===")
-    debugLog(string.format("User ID: %s", generateUserId()))
-    debugLog(string.format("Servidores escaneados: %d", stats.serversScanned))
-    debugLog(string.format("Secrets encontrados: %d", stats.secretsFound))
-    debugLog(string.format("Conexoes Cloud: %d (Falhas: %d)", stats.cloudConnections, stats.failedConnections))
-    debugLog(string.format("Status Cloud: %s", cache.cloudStatus))
-    debugLog(string.format("Sistema: %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "LIGADO" or "DESLIGADO"))
-    debugLog(string.format("Server Status: %s", isPrivateServer() and "PRIVADO" or "PUBLICO"))
-    debugLog(string.format("Players: %d/%d", #Players:GetPlayers(), Players.MaxPlayers))
-end
-
--- Loop principal
+-- Loop principal (SILENCIOSO)
 task.spawn(function()
-    debugLog("Scanner carregado - SISTEMA DESLIGADO")
-    debugLog(string.format("User ID: %s", generateUserId()))
-    debugLog("Digite '/zenikaze start' para ligar o sistema")
-    
     while true do
         if getgenv().ZENIKAZE_CONFIG.autoJoinEnabled then
             local highValueBrainhots = checkForHighValueBrainhots()
@@ -558,28 +515,20 @@ task.spawn(function()
                 local currentTime = tick()
                 
                 if brainhotsChanged(highValueBrainhots) then
-                    debugLog(string.format("%d Secrets 1M+ detectados!", #highValueBrainhots))
-                    
                     if currentTime - cache.lastNotificationTime >= getgenv().ZENIKAZE_CONFIG.cooldownTime then
                         local cloudSuccess = sendToCloud(highValueBrainhots, game.JobId)
                         
                         if cloudSuccess then
                             cache.lastNotificationTime = currentTime
                             cache.lastBrainhots = highValueBrainhots
-                            debugLog("Dados enviados para a nuvem com sucesso!")
-                        else
-                            debugLog("Falha na comunicação - tentará novamente no próximo scan", true)
                         end
                     else
-                        local timeLeft = getgenv().ZENIKAZE_CONFIG.cooldownTime - (currentTime - cache.lastNotificationTime)
-                        debugLog(string.format("Cooldown ativo - %d segundos restantes", math.ceil(timeLeft)))
                         cache.lastBrainhots = highValueBrainhots
                     end
                 end
             else
                 if #cache.lastBrainhots > 0 then
                     cache.lastBrainhots = {}
-                    debugLog("Cache limpo - Nenhum Secret 1M+ encontrado")
                 end
             end
         end
@@ -588,55 +537,4 @@ task.spawn(function()
     end
 end)
 
--- Thread para estatísticas periódicas
-task.spawn(function()
-    while true do
-        task.wait(300) -- A cada 5 minutos
-        if getgenv().ZENIKAZE_CONFIG.autoJoinEnabled then
-            printStats()
-        end
-    end
-end)
-
--- Comandos de controle via chat (CORRIGIDOS)
-if player then
-    player.Chatted:Connect(function(message)
-        local msg = message:lower()
-        
-        if msg == "/zenikaze start" then
-            getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = true
-            debugLog("Sistema LIGADO - Scanner ativo!")
-        elseif msg == "/zenikaze stop" then
-            getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = false
-            debugLog("Sistema DESLIGADO - Scanner parado!")
-        elseif msg == "/zenikaze status" then
-            printStats()
-        elseif msg == "/zenikaze toggle" then
-            getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled
-            debugLog("Scanner " .. (getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "LIGADO" or "DESLIGADO"))
-        elseif msg == "/zenikaze debug" then
-            getgenv().ZENIKAZE_CONFIG.debugMode = not getgenv().ZENIKAZE_CONFIG.debugMode
-            debugLog("Debug Mode " .. (getgenv().ZENIKAZE_CONFIG.debugMode and "ATIVADO" or "DESATIVADO"))
-        elseif msg == "/zenikaze url" then
-            debugLog(string.format("Firebase URL: %s/zenikaze/servers/%s", getgenv().ZENIKAZE_CONFIG.firebaseUrl, generateUserId()))
-        elseif msg == "/zenikaze help" then
-            debugLog("=== COMANDOS ZENIKAZE ===")
-            debugLog("/zenikaze start - Ligar o sistema")
-            debugLog("/zenikaze stop - Desligar o sistema")
-            debugLog("/zenikaze status - Mostrar estatisticas")
-            debugLog("/zenikaze toggle - Ligar/desligar scanner")
-            debugLog("/zenikaze debug - Ligar/desligar modo debug")
-            debugLog("/zenikaze url - Mostrar URL do Firebase")
-            debugLog("/zenikaze help - Mostrar este menu")
-            debugLog("Cloud Mode - conecta ao Firebase!")
-        end
-    end)
-end
-
--- Inicialização final
-debugLog("Zenikaze Cloud Scanner carregado!")
-debugLog("Sistema DESLIGADO por padrão - Digite '/zenikaze start' para ligar")
-debugLog("IMPORTANTE: Configure sua URL do Firebase na linha 11!")
-debugLog(string.format("Seu User ID: %s", generateUserId()))
-debugLog("Digite '/zenikaze help' no chat para comandos")
-debugLog("FILTROS: Apenas servers públicos, máximo 6 players, evita servers privados")
+-- SISTEMA FUNCIONA AUTOMATICAMENTE SEM PRINTS
