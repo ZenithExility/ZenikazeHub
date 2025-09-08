@@ -1,5 +1,5 @@
--- ZENIKAZE HUB AUTO JOINER - CLOUD VERSION --
--- Envia dados para Firebase Realtime Database
+-- ZENIKAZE HUB AUTO JOINER - CLOUD VERSION CORRIGIDA --
+-- Detecta brainhots únicos e envia para Firebase quando encontra secrets 1M+
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -13,27 +13,28 @@ getgenv().ZENIKAZE_CONFIG = {
     firebaseUrl = "https://zenikaze-hub-default-rtdb.firebaseio.com",
     
     -- Configurações do sistema
-    autoJoinEnabled = true, -- INICIA LIGADO AUTOMATICAMENTE
+    autoJoinEnabled = true,
     minSecretValue = 1000000, -- 1M+
-    scanInterval = 15,
-    cooldownTime = 60,
+    scanInterval = 10, -- Reduzido para detectar mais rápido
+    cooldownTime = 30, -- Reduzido para resposta mais rápida
     debugMode = false,
     
     -- Filtros de servidor
-    maxPlayersToJoin = 6, -- Não entrar em servers com mais que 6 players
-    avoidPrivateServers = true, -- Evitar servers privados
-    onlyPublicServers = true, -- Apenas servers públicos
+    maxPlayersToJoin = 7, -- Máximo 7 players (não 8)
+    avoidPrivateServers = true,
+    onlyPublicServers = true,
     
     -- ID único do usuário (gerado automaticamente)
     userId = ""
 }
 
--- Cache persistente global
+-- Cache persistente global MELHORADO
 if not getgenv().ZenikazeHub_CloudCache then
     getgenv().ZenikazeHub_CloudCache = {
-        lastBrainhots = {},
+        lastFoundSecrets = {}, -- Cache dos secrets encontrados
         lastNotificationTime = 0,
         serverJobId = "",
+        lastServerScan = {},
         sessionData = {
             serversScanned = 0,
             secretsFound = 0,
@@ -68,19 +69,17 @@ local function isPrivateServer()
     return success and result
 end
 
--- Verificar se servidor está lotado
+-- Verificar se servidor está lotado (CORRIGIDO)
 local function isServerCrowded()
     local currentPlayers = #Players:GetPlayers()
-    local maxPlayers = Players.MaxPlayers
     
-    -- Se tem mais que o limite configurado OU está 8/8
-    return currentPlayers > getgenv().ZENIKAZE_CONFIG.maxPlayersToJoin or 
-           (currentPlayers >= 8 and maxPlayers <= 8)
+    -- Rejeitar se tem 8+ players ou mais que o limite configurado
+    return currentPlayers >= 8 or currentPlayers > getgenv().ZENIKAZE_CONFIG.maxPlayersToJoin
 end
 
 -- Função para construir link de join APENAS para servers públicos
 local function buildJoinLink(placeId, jobId)
-    -- Verificar se é server privado antes de criar link
+    -- Verificar se é server privado
     if getgenv().ZENIKAZE_CONFIG.avoidPrivateServers and isPrivateServer() then
         return nil
     end
@@ -98,7 +97,7 @@ local function buildJoinLink(placeId, jobId)
     )
 end
 
--- Função para extrair valor do brainrot
+-- Função para extrair valor do brainrot (MELHORADA)
 local function getBrainrotValue(object)
     if not object or not object.Parent then return 0 end
     
@@ -134,12 +133,12 @@ local function getBrainrotValue(object)
                     end
                 end
                 
-                -- Formato números diretos (incluindo menores que 1M)
+                -- Formato números diretos
                 local directNumber = text:match("([%d,]+)/?[sS]?e?c?")
                 if directNumber then
                     local cleanNumber = directNumber:gsub(",", "")
                     local num = tonumber(cleanNumber)
-                    if num and num >= 100000 then -- Detectar valores a partir de 100K
+                    if num and num >= 1000000 then -- Só detectar 1M+
                         return num
                     end
                 end
@@ -163,7 +162,7 @@ local function isHighValueBrainrot(object, rarity)
     return brainrotValue >= getgenv().ZENIKAZE_CONFIG.minSecretValue
 end
 
--- Função para detectar raridade
+-- Função para detectar raridade (MELHORADA)
 local function getRarityFromObject(object)
     if not object or not object.Parent then return nil end
     
@@ -182,7 +181,7 @@ local function getRarityFromObject(object)
             end
         end
         
-        -- Detectar por cor
+        -- Detectar por cor (backup)
         if object:IsA("BasePart") then
             local color = object.Color
             if color == Color3.fromRGB(100, 100, 100) then
@@ -207,7 +206,7 @@ local function getDisplayName(object)
         return object.Name
     end)
     
-    return success and result or (object.Name or "Brainrot")
+    return success and result or (object.Name or "Unknown")
 end
 
 -- Função para formatar valor
@@ -228,14 +227,50 @@ local function getFormattedValue(object)
     end
 end
 
--- Função para enviar dados para a nuvem
-local function sendToCloud(foundBrainhots, jobId)
+-- Função para gerar ID único do secret (NOVA)
+local function getSecretId(secretInfo)
+    return secretInfo.name .. "|" .. secretInfo.rarity .. "|" .. secretInfo.rawValue
+end
+
+-- Função para verificar se houve mudanças nos secrets (CORRIGIDA)
+local function secretsChanged(currentSecrets)
+    if #currentSecrets ~= #cache.lastFoundSecrets then
+        return true
+    end
+    
+    local currentIds = {}
+    for _, secret in pairs(currentSecrets) do
+        currentIds[getSecretId(secret)] = true
+    end
+    
+    local lastIds = {}
+    for _, secret in pairs(cache.lastFoundSecrets) do
+        lastIds[getSecretId(secret)] = true
+    end
+    
+    -- Verificar se há novos secrets
+    for id, _ in pairs(currentIds) do
+        if not lastIds[id] then
+            return true
+        end
+    end
+    
+    return false
+end
+
+-- Função para enviar dados para a nuvem (CORRIGIDA)
+local function sendToCloud(foundSecrets, jobId)
     -- Verificar se deve evitar servers privados/lotados
     if getgenv().ZENIKAZE_CONFIG.avoidPrivateServers and isPrivateServer() then
         return false
     end
     
     if isServerCrowded() then
+        return false
+    end
+    
+    -- Só enviar se encontrou secrets válidos
+    if #foundSecrets == 0 then
         return false
     end
     
@@ -246,6 +281,11 @@ local function sendToCloud(foundBrainhots, jobId)
     local joinLink = nil
     if getgenv().ZENIKAZE_CONFIG.onlyPublicServers then
         joinLink = buildJoinLink(game.PlaceId, jobId)
+    end
+    
+    -- Se não conseguiu criar link válido, não enviar
+    if not joinLink then
+        return false
     end
     
     local serverData = {
@@ -262,7 +302,7 @@ local function sendToCloud(foundBrainhots, jobId)
         },
         secrets = {},
         statistics = {
-            totalSecrets = #foundBrainhots,
+            totalSecrets = #foundSecrets,
             highestValue = 0,
             sessionData = cache.sessionData
         },
@@ -271,18 +311,18 @@ local function sendToCloud(foundBrainhots, jobId)
     }
     
     -- Processar secrets encontrados
-    for _, brainhotInfo in ipairs(foundBrainhots) do
-        local rawValue = getBrainrotValue(brainhotInfo.object) or 0
+    for _, secretInfo in ipairs(foundSecrets) do
+        local rawValue = secretInfo.rawValue or 0
         if rawValue > serverData.statistics.highestValue then
             serverData.statistics.highestValue = rawValue
         end
         
         table.insert(serverData.secrets, {
-            name = brainhotInfo.name,
-            rarity = brainhotInfo.rarity,
-            value = brainhotInfo.value,
+            name = secretInfo.name,
+            rarity = secretInfo.rarity,
+            value = secretInfo.value,
             rawValue = rawValue,
-            formattedValue = getFormattedValue(brainhotInfo.object)
+            formattedValue = secretInfo.formattedValue
         })
     end
     
@@ -398,14 +438,14 @@ local function sendToCloud(foundBrainhots, jobId)
     return cloudSuccess
 end
 
--- Scanner de secrets
-local function checkForHighValueBrainhots()
+-- Scanner de secrets (COMPLETAMENTE REESCRITO)
+local function checkForHighValueSecrets()
     if not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled then
         return {}
     end
     
-    local found = {}
-    local totalScanned = 0
+    local foundSecrets = {}
+    local scannedObjects = {}
     
     local success = pcall(function()
         local workspace = game:GetService("Workspace")
@@ -429,24 +469,48 @@ local function checkForHighValueBrainhots()
                 end
             end)
             
+            -- Escanear apenas plots de outros players
             if not isMyPlot then
                 for _, descendant in pairs(plot:GetDescendants()) do
                     if (descendant:IsA("BasePart") or descendant:IsA("MeshPart")) and descendant.Parent then
-                        totalScanned = totalScanned + 1
+                        local objectId = tostring(descendant)
                         
-                        local rarity = getRarityFromObject(descendant)
-                        
-                        if rarity == "Secret" then
-                            if isHighValueBrainrot(descendant, rarity) then
-                                local displayName = getDisplayName(descendant)
-                                local formattedValue = getFormattedValue(descendant)
+                        -- Evitar escanear o mesmo objeto várias vezes
+                        if not scannedObjects[objectId] then
+                            scannedObjects[objectId] = true
+                            
+                            local rarity = getRarityFromObject(descendant)
+                            
+                            if rarity == "Secret" then
+                                local brainrotValue = getBrainrotValue(descendant)
                                 
-                                table.insert(found, {
-                                    name = displayName,
-                                    rarity = rarity,
-                                    value = formattedValue,
-                                    object = descendant
-                                })
+                                -- Só adicionar se tem valor 1M+
+                                if brainrotValue >= getgenv().ZENIKAZE_CONFIG.minSecretValue then
+                                    local displayName = getDisplayName(descendant)
+                                    local formattedValue = getFormattedValue(descendant)
+                                    
+                                    local secretInfo = {
+                                        name = displayName,
+                                        rarity = rarity,
+                                        value = formattedValue,
+                                        rawValue = brainrotValue,
+                                        formattedValue = formattedValue,
+                                        objectId = objectId
+                                    }
+                                    
+                                    -- Verificar se já não foi adicionado (evitar duplicatas)
+                                    local isDuplicate = false
+                                    for _, existingSecret in pairs(foundSecrets) do
+                                        if getSecretId(existingSecret) == getSecretId(secretInfo) then
+                                            isDuplicate = true
+                                            break
+                                        end
+                                    end
+                                    
+                                    if not isDuplicate then
+                                        table.insert(foundSecrets, secretInfo)
+                                    end
+                                end
                             end
                         end
                     end
@@ -455,80 +519,47 @@ local function checkForHighValueBrainhots()
         end
     end)
     
-    cache.sessionData.secretsFound = cache.sessionData.secretsFound + #found
+    cache.sessionData.secretsFound = cache.sessionData.secretsFound + #foundSecrets
     
-    return found
+    return foundSecrets
 end
 
 -- Detectar mudança de servidor
 if cache.serverJobId ~= game.JobId then
     cache.serverJobId = game.JobId
-    cache.lastBrainhots = {}
+    cache.lastFoundSecrets = {}
     cache.lastNotificationTime = 0
+    cache.lastServerScan = {}
     cache.sessionData.serversScanned = cache.sessionData.serversScanned + 1
     cache.cloudStatus = "UNKNOWN"
 end
 
--- Função para gerar ID único do brainrot
-local function getBrainrotId(brainrot)
-    return brainrot.name .. "|" .. brainrot.rarity .. "|" .. (brainrot.value or "")
-end
-
--- Função para verificar mudanças
-local function brainhotsChanged(currentBrainhots)
-    if #currentBrainhots ~= #cache.lastBrainhots then
-        return true
-    end
-    
-    local currentIds = {}
-    for _, brainrot in pairs(currentBrainhots) do
-        currentIds[getBrainrotId(brainrot)] = true
-    end
-    
-    local lastIds = {}
-    for _, brainrot in pairs(cache.lastBrainhots) do
-        lastIds[getBrainrotId(brainrot)] = true
-    end
-    
-    for id, _ in pairs(currentIds) do
-        if not lastIds[id] then
-            return true
-        end
-    end
-    
-    for id, _ in pairs(lastIds) do
-        if not currentIds[id] then
-            return true
-        end
-    end
-    
-    return false
-end
-
--- Loop principal (SILENCIOSO)
+-- Loop principal (OTIMIZADO)
 task.spawn(function()
     while true do
         if getgenv().ZENIKAZE_CONFIG.autoJoinEnabled then
-            local highValueBrainhots = checkForHighValueBrainhots()
+            local currentSecrets = checkForHighValueSecrets()
             
-            if #highValueBrainhots > 0 then
+            -- Só processar se encontrou secrets válidos
+            if #currentSecrets > 0 then
                 local currentTime = tick()
                 
-                if brainhotsChanged(highValueBrainhots) then
+                -- Verificar se houve mudanças nos secrets
+                if secretsChanged(currentSecrets) then
+                    -- Respeitar cooldown
                     if currentTime - cache.lastNotificationTime >= getgenv().ZENIKAZE_CONFIG.cooldownTime then
-                        local cloudSuccess = sendToCloud(highValueBrainhots, game.JobId)
+                        local cloudSuccess = sendToCloud(currentSecrets, game.JobId)
                         
                         if cloudSuccess then
                             cache.lastNotificationTime = currentTime
-                            cache.lastBrainhots = highValueBrainhots
+                            cache.lastFoundSecrets = currentSecrets
                         end
-                    else
-                        cache.lastBrainhots = highValueBrainhots
                     end
                 end
             else
-                if #cache.lastBrainhots > 0 then
-                    cache.lastBrainhots = {}
+                -- Limpar cache se não há mais secrets
+                if #cache.lastFoundSecrets > 0 then
+                    cache.lastFoundSecrets = {}
                 end
             end
         end
@@ -537,4 +568,4 @@ task.spawn(function()
     end
 end)
 
--- SISTEMA FUNCIONA AUTOMATICAMENTE SEM PRINTS
+-- SISTEMA OTIMIZADO PARA DETECTAR SECRETS ÚNICOS
