@@ -678,5 +678,5 @@ game.Players.PlayerRemoving:Connect(function(plr)
     end
 end)
 
-debugLog("Sistema híbrido pronto! Digite /help no chat para comandos")
+debugLog("Zenikaze Hub pronto! Digite /help no chat para comandos")
 debugLog("Aguardando secrets 1M+...")
