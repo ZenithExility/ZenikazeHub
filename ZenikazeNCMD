@@ -10,7 +10,7 @@ local player = Players.LocalPlayer
 -- Configurações principais
 getgenv().ZENIKAZE_CONFIG = {
     -- SUBSTITUA COM SEU PROJETO FIREBASE
-    firebaseUrl = "https://zenikaze-hub-default-rtdb.firebaseio.com/",
+    firebaseUrl = "https://sua-base-firebase-default-rtdb.firebaseio.com",
     
     -- Configurações do sistema
     autoJoinEnabled = true,
@@ -560,7 +560,8 @@ if player then
 end
 
 -- Inicialização final
-debugLog("Zenikaze AutoJoiner carregado - Cloud Mode (Firebase)!")
-debugLog("IMPORTANTE: Configure sua URL do Firebase na linha 11!")
+debugLog("Zenikaze Cloud Scanner carregado!")
+debugLog("Sistema DESLIGADO por padrão - Digite '/zenikaze start' para ligar")
+debugLog("IMPORTANTE: Configure sua URL na linha 11!")
 debugLog(string.format("Seu User ID: %s", generateUserId()))
 debugLog("Digite '/zenikaze help' no chat para comandos")
