@@ -1,4 +1,40 @@
--- ZENIKAZE HUB AUTO JOINER - SISTEMA HÍBRIDO COMPLETO --
+-- Scanner de secrets (MELHORADO)
+local function checkForHighValueBrainhots()
+    local found = {}
+    local totalScanned = 0
+    local totalSecrets = 0
+    
+    local success = pcall(function()
+        local workspace = game:GetService("Workspace")
+        local plotsFolder = workspace:FindFirstChild("Plots")
+        
+        if not plotsFolder then 
+            debugLog("Pasta 'Plots' não encontrada no Workspace")
+            return 
+        end
+        
+        debugLog(string.format("Iniciando scan em %d plots...", #plotsFolder:GetChildren()))
+        
+        for plotIndex, plot in pairs(plotsFolder:GetChildren()) do
+            local isMyPlot = false
+            
+            -- Verificar se é meu plot
+            pcall(function()
+                local plotSign = plot:FindFirstChild("PlotSign")
+                if plotSign and plotSign:FindFirstChild("SurfaceGui") then
+                    local text = plotSign.SurfaceGui.Frame.TextLabel.Text
+                    if text:find(player.Name) then
+                        isMyPlot = true
+                        debugLog(string.format("Pulando meu plot: %s", plot.Name))
+                    end
+                end
+            end)
+            
+            if not isMyPlot then
+                debugLog(string.format("Escaneando plot %d: %s", plotIndex, plot.Name))
+                
+                for _, descendant in pairs(plot:GetDescendants()) do
+                    if (descendant:IsA("BasePart") or descendant:IsA("-- ZENIKAZE HUB AUTO JOINER - SISTEMA HÍBRIDO COMPLETO --
 -- HTTP simples + comandos automáticos no Python
 
 local Players = game:GetService("Players")
@@ -295,7 +331,8 @@ local function sendToHybridSystem(foundBrainhots, jobId)
                     debugLog(string.format("Sistema Híbrido resposta: %s", responseData.message or "OK"))
                     
                     if responseData.is_chilli then
-                        debugLog("Sistema detectou CHILLI JOIN!")
+                        debugLog("🔥 Sistema detectou CHILLI JOIN! 🔥")
+                        debugLog("O Chilli Joiner será aberto automaticamente!")
                         cache.sessionData.commandsReceived = cache.sessionData.commandsReceived + 1
                     end
                     
@@ -305,11 +342,16 @@ local function sendToHybridSystem(foundBrainhots, jobId)
                     end
                     
                     if responseData.highest_value then
-                        debugLog(string.format("Maior valor processado: %d", responseData.highest_value))
+                        debugLog(string.format("Maior valor processado: %s", getFormattedValueFromNumber(responseData.highest_value)))
                     end
                     
-                    if responseData.secrets_approved then
-                        debugLog(string.format("Secrets aprovados: %d", responseData.secrets_approved))
+                    if responseData.secrets_approved and responseData.secrets_total then
+                        debugLog(string.format("Filtros aplicados: %d/%d secrets aprovados", responseData.secrets_approved, responseData.secrets_total))
+                    end
+                    
+                    if responseData.best_secret then
+                        local best = responseData.best_secret
+                        debugLog(string.format("Melhor secret: %s [%s] - %s", best.name or "Unknown", best.rarity or "Unknown", best.formattedValue or "Unknown"))
                     end
                 end
             end
