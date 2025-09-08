@@ -1,5 +1,5 @@
--- ZENIKAZE HUB AUTO JOINER - SISTEMA CMD (SEM HTTP) --
--- Escreve arquivos JSON para comunicação com sistema Python CMD
+-- ZENIKAZE HUB AUTO JOINER - SISTEMA HÍBRIDO --
+-- HTTP simples + comandos automáticos no Python
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -9,38 +9,32 @@ local player = Players.LocalPlayer
 
 -- Configurações principais
 getgenv().ZENIKAZE_CONFIG = {
-    useCmdSystem = true, -- Sistema por arquivos/comandos (sem HTTP)
+    pythonEndpoint = "http://localhost:8080", -- Endpoint do sistema híbrido Python
     autoJoinEnabled = true,
     minSecretValue = 1000000, -- 1M+
     scanInterval = 15,
     cooldownTime = 60,
-    debugMode = false,
-    -- Diretórios para comunicação (devem corresponder ao Python)
-    inputDir = "zenikaze_input",   -- Onde o Lua escreve
-    outputDir = "zenikaze_output", -- Onde o Python escreve respostas
-    maxWaitResponse = 30 -- Tempo máximo para aguardar resposta (segundos)
+    debugMode = false
 }
 
 -- Cache persistente global
-if not getgenv().ZenikazeHub_CMD_Cache then
-    getgenv().ZenikazeHub_CMD_Cache = {
+if not getgenv().ZenikazeHub_Hybrid_Cache then
+    getgenv().ZenikazeHub_Hybrid_Cache = {
         lastBrainhots = {},
         lastNotificationTime = 0,
         serverJobId = "",
         sessionData = {
             serversScanned = 0,
             secretsFound = 0,
-            filesWritten = 0,
-            responsesReceived = 0,
-            cmdConnections = 0,
-            failedConnections = 0
+            hybridConnections = 0,
+            failedConnections = 0,
+            commandsReceived = 0
         },
-        requestCounter = 0,
-        cmdSystemStatus = "UNKNOWN"
+        hybridSystemStatus = "UNKNOWN"
     }
 end
 
-local cache = getgenv().ZenikazeHub_CMD_Cache
+local cache = getgenv().ZenikazeHub_Hybrid_Cache
 
 -- Função para logs
 local function debugLog(message, isError)
@@ -52,12 +46,6 @@ local function debugLog(message, isError)
     if getgenv().ZENIKAZE_CONFIG.debugMode then
         warn(string.format("[DEBUG %s] %s", os.date("%H:%M:%S"), message))
     end
-end
-
--- Função para gerar ID único para request
-local function generateRequestId()
-    cache.requestCounter = cache.requestCounter + 1
-    return string.format("%s_%d_%d", player.Name, os.time(), cache.requestCounter)
 end
 
 -- Função para construir link de join
@@ -200,77 +188,11 @@ local function getFormattedValue(object)
     end
 end
 
--- Função para escrever arquivo para o sistema CMD Python
-local function writeFileForCmdSystem(data, requestId)
-    local fileName = string.format("request_%s.json", requestId)
-    local filePath = string.format("%s/%s", getgenv().ZENIKAZE_CONFIG.inputDir, fileName)
-    
-    local success = pcall(function()
-        local jsonData = HttpService:JSONEncode(data)
-        
-        -- Tentar usar writefile se disponível
-        if writefile then
-            writefile(filePath, jsonData)
-            cache.sessionData.filesWritten = cache.sessionData.filesWritten + 1
-            debugLog(string.format("Arquivo escrito: %s", fileName))
-            return true
-        else
-            debugLog("Função writefile não disponível no executor", true)
-            return false
-        end
-    end)
-    
-    return success
-end
-
--- Função para ler resposta do sistema CMD Python
-local function readResponseFromCmdSystem(requestId)
-    local fileName = string.format("response_%s.json", requestId)
-    local filePath = string.format("%s/%s", getgenv().ZENIKAZE_CONFIG.outputDir, fileName)
-    
-    local startTime = tick()
-    local maxWait = getgenv().ZENIKAZE_CONFIG.maxWaitResponse
-    
-    while tick() - startTime < maxWait do
-        local success, data = pcall(function()
-            if readfile then
-                local jsonContent = readfile(filePath)
-                if jsonContent and jsonContent ~= "" then
-                    local responseData = HttpService:JSONDecode(jsonContent)
-                    
-                    -- Tentar deletar arquivo após leitura
-                    pcall(function()
-                        if delfile then
-                            delfile(filePath)
-                        end
-                    end)
-                    
-                    cache.sessionData.responsesReceived = cache.sessionData.responsesReceived + 1
-                    return responseData
-                end
-            end
-            return nil
-        end)
-        
-        if success and data then
-            return data
-        end
-        
-        task.wait(0.5) -- Aguardar meio segundo antes de tentar novamente
-    end
-    
-    debugLog(string.format("Timeout aguardando resposta: %s", fileName), true)
-    return nil
-end
-
--- Função para enviar dados para o sistema CMD Python
-local function sendToCmdSystem(foundBrainhots, jobId)
-    local requestId = generateRequestId()
-    
+-- Função para enviar dados para o sistema híbrido Python
+local function sendToHybridSystem(foundBrainhots, jobId)
     local serverData = {
         action = "NEW_SERVER_FOUND",
         timestamp = DateTime.now():ToIsoDate(),
-        request_id = requestId,
         server = {
             jobId = jobId,
             placeId = game.PlaceId,
@@ -285,7 +207,7 @@ local function sendToCmdSystem(foundBrainhots, jobId)
             sessionData = cache.sessionData
         },
         autoJoinReady = getgenv().ZENIKAZE_CONFIG.autoJoinEnabled,
-        client_type = "roblox_lua_cmd_system"
+        client_type = "roblox_lua_hybrid"
     }
     
     -- Processar secrets encontrados
@@ -304,42 +226,104 @@ local function sendToCmdSystem(foundBrainhots, jobId)
         })
     end
     
-    -- Escrever arquivo
-    local writeSuccess = writeFileForCmdSystem(serverData, requestId)
+    local jsonData = HttpService:JSONEncode(serverData)
     
-    if not writeSuccess then
-        cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
-        cache.cmdSystemStatus = "OFFLINE"
-        debugLog("Falha ao escrever arquivo - Sistema de arquivos não disponível?", true)
-        return false
+    -- Tentar enviar para o sistema híbrido Python
+    local hybridMethods = {
+        function() -- Método http_request
+            if http_request then
+                return http_request({
+                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["X-Source"] = "zenikaze-lua-hybrid",
+                        ["User-Agent"] = "Zenikaze-Hybrid/1.0"
+                    },
+                    Body = jsonData
+                })
+            end
+            return false
+        end,
+        function() -- Método request
+            if request then
+                return request({
+                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["X-Source"] = "zenikaze-lua-hybrid"
+                    },
+                    Body = jsonData
+                })
+            end
+            return false
+        end,
+        function() -- Método syn.request
+            if syn and syn.request then
+                return syn.request({
+                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["X-Source"] = "zenikaze-lua-hybrid"
+                    },
+                    Body = jsonData
+                })
+            end
+            return false
+        end
+    }
+    
+    local hybridSuccess = false
+    for _, method in ipairs(hybridMethods) do
+        local success, response = pcall(method)
+        if success and response then
+            hybridSuccess = true
+            cache.sessionData.hybridConnections = cache.sessionData.hybridConnections + 1
+            cache.hybridSystemStatus = "CONNECTED"
+            
+            debugLog("Dados enviados para Sistema Híbrido Python!")
+            
+            -- Processar resposta do sistema híbrido
+            if response.Body then
+                local responseSuccess, responseData = pcall(function()
+                    return HttpService:JSONDecode(response.Body)
+                end)
+                
+                if responseSuccess and responseData then
+                    debugLog(string.format("Sistema Híbrido resposta: %s", responseData.message or "OK"))
+                    
+                    if responseData.is_chilli then
+                        debugLog("Sistema detectou CHILLI JOIN!")
+                        cache.sessionData.commandsReceived = cache.sessionData.commandsReceived + 1
+                    end
+                    
+                    if responseData.commands_executed then
+                        debugLog("Comandos externos executados no sistema!")
+                        cache.sessionData.commandsReceived = cache.sessionData.commandsReceived + 1
+                    end
+                    
+                    if responseData.highest_value then
+                        debugLog(string.format("Maior valor processado: %d", responseData.highest_value))
+                    end
+                    
+                    if responseData.secrets_approved then
+                        debugLog(string.format("Secrets aprovados: %d", responseData.secrets_approved))
+                    end
+                end
+            end
+            break
+        end
     end
     
-    debugLog("Dados enviados via arquivo para Sistema CMD Python!")
-    
-    -- Aguardar resposta
-    local response = readResponseFromCmdSystem(requestId)
-    
-    if response then
-        cache.sessionData.cmdConnections = cache.sessionData.cmdConnections + 1
-        cache.cmdSystemStatus = "CONNECTED"
-        
-        debugLog(string.format("Sistema CMD resposta: %s", response.message or "OK"))
-        
-        if response.is_chilli then
-            debugLog("Sistema CMD detectou CHILLI JOIN!")
-        end
-        
-        if response.highest_value then
-            debugLog(string.format("Maior valor processado: %d", response.highest_value))
-        end
-        
-        return true
-    else
+    if not hybridSuccess then
         cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
-        cache.cmdSystemStatus = "TIMEOUT"
-        debugLog("Timeout aguardando resposta do Sistema CMD", true)
-        return false
+        cache.hybridSystemStatus = "OFFLINE"
+        debugLog("Falha ao conectar com Sistema Híbrido Python - Sistema offline?", true)
     end
+    
+    return hybridSuccess
 end
 
 -- Scanner de secrets
@@ -410,7 +394,7 @@ if cache.serverJobId ~= game.JobId then
     cache.lastBrainhots = {}
     cache.lastNotificationTime = 0
     cache.sessionData.serversScanned = cache.sessionData.serversScanned + 1
-    cache.cmdSystemStatus = "UNKNOWN"
+    cache.hybridSystemStatus = "UNKNOWN"
     debugLog("Novo servidor detectado - Sistema resetado")
 end
 
@@ -456,32 +440,60 @@ local function printStats()
     debugLog("=== ESTATISTICAS DA SESSAO ===")
     debugLog(string.format("Servidores escaneados: %d", stats.serversScanned))
     debugLog(string.format("Secrets encontrados: %d", stats.secretsFound))
-    debugLog(string.format("Arquivos escritos: %d", stats.filesWritten))
-    debugLog(string.format("Respostas recebidas: %d", stats.responsesReceived))
-    debugLog(string.format("Status Sistema CMD: %s", cache.cmdSystemStatus))
+    debugLog(string.format("Conexoes hibridas: %d (Falhas: %d)", stats.hybridConnections, stats.failedConnections))
+    debugLog(string.format("Comandos recebidos: %d", stats.commandsReceived))
+    debugLog(string.format("Status Sistema: %s", cache.hybridSystemStatus))
 end
 
--- Verificar se o sistema de arquivos está disponível
-local function checkFileSystemSupport()
-    if not writefile or not readfile then
-        debugLog("ERRO: Sistema de arquivos não suportado!", true)
-        debugLog("Seu executor precisa ter writefile e readfile", true)
-        return false
+-- Função para testar conexão
+local function testConnection()
+    debugLog("Testando conexão com sistema híbrido...")
+    
+    local testMethods = {
+        function()
+            if http_request then
+                return http_request({
+                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint .. "/status",
+                    Method = "GET",
+                    Headers = {
+                        ["User-Agent"] = "Zenikaze-Test/1.0"
+                    }
+                })
+            end
+            return false
+        end,
+        function()
+            if request then
+                return request({
+                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint .. "/status",
+                    Method = "GET"
+                })
+            end
+            return false
+        end
+    }
+    
+    for _, method in ipairs(testMethods) do
+        local success, response = pcall(method)
+        if success and response and response.StatusCode == 200 then
+            debugLog("Conexão com sistema híbrido OK!")
+            cache.hybridSystemStatus = "CONNECTED"
+            return true
+        end
     end
     
-    debugLog("Sistema de arquivos disponível - Modo CMD ativo", "SUCCESS")
-    return true
+    debugLog("Falha ao conectar - verifique se o Python está rodando", true)
+    cache.hybridSystemStatus = "OFFLINE"
+    return false
 end
 
 -- Loop principal
 task.spawn(function()
-    -- Verificar suporte ao sistema de arquivos
-    if not checkFileSystemSupport() then
-        debugLog("Sistema encerrado - executor incompatível", true)
-        return
-    end
+    debugLog("Scanner ativo (1M+ Range - Sistema Híbrido)")
     
-    debugLog("Scanner ativo (1M+ Range - Sistema CMD)")
+    -- Testar conexão inicial
+    task.wait(2)
+    testConnection()
     
     while true do
         local highValueBrainhots = checkForHighValueBrainhots()
@@ -493,12 +505,12 @@ task.spawn(function()
                 debugLog(string.format("%d Secrets 1M+ detectados!", #highValueBrainhots))
                 
                 if currentTime - cache.lastNotificationTime >= getgenv().ZENIKAZE_CONFIG.cooldownTime then
-                    local cmdSuccess = sendToCmdSystem(highValueBrainhots, game.JobId)
+                    local hybridSuccess = sendToHybridSystem(highValueBrainhots, game.JobId)
                     
-                    if cmdSuccess then
+                    if hybridSuccess then
                         cache.lastNotificationTime = currentTime
                         cache.lastBrainhots = highValueBrainhots
-                        debugLog("Dados enviados via arquivo para Sistema CMD!")
+                        debugLog("Dados enviados -> Sistema executa comandos automaticamente!")
                     else
                         debugLog("Falha na comunicação - tentara novamente no proximo scan", true)
                     end
@@ -534,26 +546,41 @@ if player then
         
         if msg == "/zenikaze status" then
             printStats()
+        elseif msg == "/zenikaze test" then
+            testConnection()
         elseif msg == "/zenikaze toggle" then
             getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled
             debugLog("AutoJoin " .. (getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVADO" or "DESATIVADO"))
         elseif msg == "/zenikaze debug" then
             getgenv().ZENIKAZE_CONFIG.debugMode = not getgenv().ZENIKAZE_CONFIG.debugMode
             debugLog("Debug Mode " .. (getgenv().ZENIKAZE_CONFIG.debugMode and "ATIVADO" or "DESATIVADO"))
+        elseif msg:match("^/zenikaze endpoint (.+)") then
+            local newEndpoint = msg:match("^/zenikaze endpoint (.+)")
+            getgenv().ZENIKAZE_CONFIG.pythonEndpoint = newEndpoint
+            debugLog("Endpoint alterado para: " .. newEndpoint)
+            testConnection()
         elseif msg == "/zenikaze help" then
             debugLog("=== COMANDOS ZENIKAZE ===")
             debugLog("/zenikaze status - Mostrar estatisticas")
+            debugLog("/zenikaze test - Testar conexao")
             debugLog("/zenikaze toggle - Ligar/desligar AutoJoin")
             debugLog("/zenikaze debug - Ligar/desligar modo debug")
+            debugLog("/zenikaze endpoint [url] - Alterar endpoint")
             debugLog("/zenikaze help - Mostrar este menu")
-            debugLog("Sistema CMD - executa comandos automaticamente!")
+            debugLog("Sistema Híbrido - HTTP + Comandos automáticos!")
         end
     end)
 end
 
 -- Inicialização final
-debugLog("Zenikaze AutoJoiner carregado - Sistema CMD!")
-debugLog("NENHUMA PORTA HTTP necessária!")
-debugLog("Script Lua -> Arquivos JSON -> Sistema CMD Python")
-debugLog("Execute o Sistema CMD Python para processar os arquivos")
+debugLog("Zenikaze AutoJoiner carregado - Sistema Híbrido!")
+debugLog("HTTP simples + comandos automáticos no Python")
+debugLog("Execute o Sistema Híbrido Python para ativar")
 debugLog("Digite '/zenikaze help' no chat para comandos")
+
+-- Log de configuração
+debugLog("=== CONFIGURAÇÃO INICIAL ===")
+debugLog(string.format("Endpoint: %s", getgenv().ZENIKAZE_CONFIG.pythonEndpoint))
+debugLog(string.format("AutoJoin: %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVO" or "INATIVO"))
+debugLog(string.format("Scan Interval: %ds", getgenv().ZENIKAZE_CONFIG.scanInterval))
+debugLog("Sistema pronto para detectar Secrets 1M+!")
