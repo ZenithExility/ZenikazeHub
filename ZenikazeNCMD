@@ -1,4 +1,4 @@
--- ZENIKAZE HUB AUTO JOINER - SISTEMA HÍBRIDO --
+-- ZENIKAZE HUB AUTO JOINER - SISTEMA HÍBRIDO COMPLETO --
 -- HTTP simples + comandos automáticos no Python
 
 local Players = game:GetService("Players")
@@ -445,19 +445,89 @@ local function printStats()
     debugLog(string.format("Status Sistema: %s", cache.hybridSystemStatus))
 end
 
--- Função para testar conexão
-local function testConnection()
-    debugLog("Testando conexão com sistema híbrido...")
+-- SISTEMA PRINCIPAL DE SCAN E NOTIFICAÇÃO
+local lastScanTime = 0
+local isScanning = false
+
+local function mainScanLoop()
+    if isScanning then return end
+    
+    local currentTime = tick()
+    
+    -- Cooldown entre scans
+    if currentTime - lastScanTime < getgenv().ZENIKAZE_CONFIG.scanInterval then
+        return
+    end
+    
+    isScanning = true
+    lastScanTime = currentTime
+    
+    local success = pcall(function()
+        local foundBrainhots = checkForHighValueBrainhots()
+        
+        -- Verificar se houve mudanças ou se é a primeira verificação
+        if brainhotsChanged(foundBrainhots) or #cache.lastBrainhots == 0 then
+            cache.lastBrainhots = foundBrainhots
+            
+            if #foundBrainhots > 0 then
+                debugLog(string.format("SERVIDOR COM SECRETS! Encontrados: %d", #foundBrainhots))
+                
+                -- Enviar para sistema híbrido Python
+                local hybridSent = sendToHybridSystem(foundBrainhots, game.JobId)
+                
+                -- Log dos secrets encontrados
+                for i, brainrot in ipairs(foundBrainhots) do
+                    debugLog(string.format("Secret %d: %s [%s] - %s", i, brainrot.name, brainrot.rarity, brainrot.value))
+                end
+                
+                -- Atualizar timestamp da última notificação
+                cache.lastNotificationTime = currentTime
+                
+                if hybridSent then
+                    debugLog("Sistema Híbrido processou os dados - AutoJoin ativo!")
+                else
+                    debugLog("Falha na comunicação com Sistema Híbrido", true)
+                end
+            else
+                -- Server limpo
+                if cache.hybridSystemStatus ~= "OFFLINE" then
+                    debugLog("Servidor limpo - nenhum secret 1M+ encontrado")
+                end
+            end
+        end
+    end)
+    
+    if not success then
+        debugLog("Erro durante scan principal", true)
+    end
+    
+    isScanning = false
+end
+
+-- INICIALIZAÇÃO DO SISTEMA
+debugLog("=== ZENIKAZE HYBRID AUTOJOINER INICIADO ===")
+debugLog(string.format("Endpoint Python: %s", getgenv().ZENIKAZE_CONFIG.pythonEndpoint))
+debugLog(string.format("Valor minimo: %.1fM+", getgenv().ZENIKAZE_CONFIG.minSecretValue / 1000000))
+debugLog(string.format("Intervalo de scan: %ds", getgenv().ZENIKAZE_CONFIG.scanInterval))
+debugLog(string.format("AutoJoin: %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVO" or "INATIVO"))
+
+-- Testar conexão com sistema híbrido
+spawn(function()
+    wait(2) -- Aguardar inicialização
+    
+    local testData = {
+        action = "CONNECTION_TEST",
+        timestamp = DateTime.now():ToIsoDate(),
+        client_type = "roblox_lua_hybrid"
+    }
     
     local testMethods = {
-        function()
+        function() 
             if http_request then
                 return http_request({
                     Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint .. "/status",
                     Method = "GET",
-                    Headers = {
-                        ["User-Agent"] = "Zenikaze-Test/1.0"
-                    }
+                    Headers = {["X-Source"] = "zenikaze-lua-test"}
                 })
             end
             return false
@@ -473,114 +543,63 @@ local function testConnection()
         end
     }
     
+    local connectionOK = false
     for _, method in ipairs(testMethods) do
         local success, response = pcall(method)
         if success and response and response.StatusCode == 200 then
-            debugLog("Conexão com sistema híbrido OK!")
+            connectionOK = true
             cache.hybridSystemStatus = "CONNECTED"
-            return true
+            debugLog("Conexão com Sistema Híbrido Python OK!")
+            break
         end
     end
     
-    debugLog("Falha ao conectar - verifique se o Python está rodando", true)
-    cache.hybridSystemStatus = "OFFLINE"
-    return false
-end
-
--- Loop principal
-task.spawn(function()
-    debugLog("Scanner ativo (1M+ Range - Sistema Híbrido)")
-    
-    -- Testar conexão inicial
-    task.wait(2)
-    testConnection()
-    
-    while true do
-        local highValueBrainhots = checkForHighValueBrainhots()
-        
-        if #highValueBrainhots > 0 then
-            local currentTime = tick()
-            
-            if brainhotsChanged(highValueBrainhots) then
-                debugLog(string.format("%d Secrets 1M+ detectados!", #highValueBrainhots))
-                
-                if currentTime - cache.lastNotificationTime >= getgenv().ZENIKAZE_CONFIG.cooldownTime then
-                    local hybridSuccess = sendToHybridSystem(highValueBrainhots, game.JobId)
-                    
-                    if hybridSuccess then
-                        cache.lastNotificationTime = currentTime
-                        cache.lastBrainhots = highValueBrainhots
-                        debugLog("Dados enviados -> Sistema executa comandos automaticamente!")
-                    else
-                        debugLog("Falha na comunicação - tentara novamente no proximo scan", true)
-                    end
-                else
-                    local timeLeft = getgenv().ZENIKAZE_CONFIG.cooldownTime - (currentTime - cache.lastNotificationTime)
-                    debugLog(string.format("Cooldown ativo - %d segundos restantes", math.ceil(timeLeft)))
-                    cache.lastBrainhots = highValueBrainhots
-                end
-            end
-        else
-            if #cache.lastBrainhots > 0 then
-                cache.lastBrainhots = {}
-                debugLog("Cache limpo - Nenhum Secret 1M+ encontrado")
-            end
-        end
-        
-        task.wait(getgenv().ZENIKAZE_CONFIG.scanInterval)
+    if not connectionOK then
+        cache.hybridSystemStatus = "OFFLINE"
+        debugLog("Sistema Híbrido Python offline - Execute o script Python primeiro!", true)
+        debugLog("Execute: python teste.py", true)
     end
 end)
 
--- Thread para estatísticas periódicas
-task.spawn(function()
-    while true do
-        task.wait(300) -- A cada 5 minutos
+-- LOOP PRINCIPAL
+local connection = RunService.Heartbeat:Connect(mainScanLoop)
+
+-- COMANDOS DE CHAT
+local function onPlayerChatted(message)
+    local msg = message:lower()
+    
+    if msg == "/stats" then
         printStats()
+    elseif msg == "/toggle" then
+        getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled
+        debugLog(string.format("AutoJoin %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVADO" or "DESATIVADO"))
+    elseif msg == "/debug" then
+        getgenv().ZENIKAZE_CONFIG.debugMode = not getgenv().ZENIKAZE_CONFIG.debugMode
+        debugLog(string.format("Debug mode %s", getgenv().ZENIKAZE_CONFIG.debugMode and "ATIVADO" or "DESATIVADO"))
+    elseif msg == "/scan" then
+        lastScanTime = 0 -- Forçar scan imediato
+        debugLog("Scan forçado!")
+    elseif msg == "/help" then
+        debugLog("=== COMANDOS DISPONIVEIS ===")
+        debugLog("/stats - Estatisticas da sessao")
+        debugLog("/toggle - Liga/desliga AutoJoin")
+        debugLog("/debug - Liga/desliga debug mode")
+        debugLog("/scan - Força scan imediato")
+        debugLog("/help - Esta ajuda")
+    end
+end
+
+player.Chatted:Connect(onPlayerChatted)
+
+-- CLEANUP ao sair
+game.Players.PlayerRemoving:Connect(function(plr)
+    if plr == player then
+        if connection then
+            connection:Disconnect()
+        end
+        debugLog("Sistema Zenikaze desconectado")
     end
 end)
 
--- Comandos de controle via chat
-if player then
-    player.Chatted:Connect(function(message)
-        local msg = message:lower()
-        
-        if msg == "/zenikaze status" then
-            printStats()
-        elseif msg == "/zenikaze test" then
-            testConnection()
-        elseif msg == "/zenikaze toggle" then
-            getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled
-            debugLog("AutoJoin " .. (getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVADO" or "DESATIVADO"))
-        elseif msg == "/zenikaze debug" then
-            getgenv().ZENIKAZE_CONFIG.debugMode = not getgenv().ZENIKAZE_CONFIG.debugMode
-            debugLog("Debug Mode " .. (getgenv().ZENIKAZE_CONFIG.debugMode and "ATIVADO" or "DESATIVADO"))
-        elseif msg:match("^/zenikaze endpoint (.+)") then
-            local newEndpoint = msg:match("^/zenikaze endpoint (.+)")
-            getgenv().ZENIKAZE_CONFIG.pythonEndpoint = newEndpoint
-            debugLog("Endpoint alterado para: " .. newEndpoint)
-            testConnection()
-        elseif msg == "/zenikaze help" then
-            debugLog("=== COMANDOS ZENIKAZE ===")
-            debugLog("/zenikaze status - Mostrar estatisticas")
-            debugLog("/zenikaze test - Testar conexao")
-            debugLog("/zenikaze toggle - Ligar/desligar AutoJoin")
-            debugLog("/zenikaze debug - Ligar/desligar modo debug")
-            debugLog("/zenikaze endpoint [url] - Alterar endpoint")
-            debugLog("/zenikaze help - Mostrar este menu")
-            debugLog("Sistema Híbrido - HTTP + Comandos automáticos!")
-        end
-    end)
-end
-
--- Inicialização final
-debugLog("Zenikaze AutoJoiner carregado - Sistema Híbrido!")
-debugLog("HTTP simples + comandos automáticos no Python")
-debugLog("Execute o Sistema Híbrido Python para ativar")
-debugLog("Digite '/zenikaze help' no chat para comandos")
-
--- Log de configuração
-debugLog("=== CONFIGURAÇÃO INICIAL ===")
-debugLog(string.format("Endpoint: %s", getgenv().ZENIKAZE_CONFIG.pythonEndpoint))
-debugLog(string.format("AutoJoin: %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVO" or "INATIVO"))
-debugLog(string.format("Scan Interval: %ds", getgenv().ZENIKAZE_CONFIG.scanInterval))
-debugLog("Sistema pronto para detectar Secrets 1M+!")
+debugLog("Sistema híbrido pronto! Digite /help no chat para comandos")
+debugLog("Aguardando secrets 1M+...")
