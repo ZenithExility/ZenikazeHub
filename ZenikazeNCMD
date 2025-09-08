@@ -1,40 +1,4 @@
--- Scanner de secrets (MELHORADO)
-local function checkForHighValueBrainhots()
-    local found = {}
-    local totalScanned = 0
-    local totalSecrets = 0
-    
-    local success = pcall(function()
-        local workspace = game:GetService("Workspace")
-        local plotsFolder = workspace:FindFirstChild("Plots")
-        
-        if not plotsFolder then 
-            debugLog("Pasta 'Plots' não encontrada no Workspace")
-            return 
-        end
-        
-        debugLog(string.format("Iniciando scan em %d plots...", #plotsFolder:GetChildren()))
-        
-        for plotIndex, plot in pairs(plotsFolder:GetChildren()) do
-            local isMyPlot = false
-            
-            -- Verificar se é meu plot
-            pcall(function()
-                local plotSign = plot:FindFirstChild("PlotSign")
-                if plotSign and plotSign:FindFirstChild("SurfaceGui") then
-                    local text = plotSign.SurfaceGui.Frame.TextLabel.Text
-                    if text:find(player.Name) then
-                        isMyPlot = true
-                        debugLog(string.format("Pulando meu plot: %s", plot.Name))
-                    end
-                end
-            end)
-            
-            if not isMyPlot then
-                debugLog(string.format("Escaneando plot %d: %s", plotIndex, plot.Name))
-                
-                for _, descendant in pairs(plot:GetDescendants()) do
-                    if (descendant:IsA("BasePart") or descendant:IsA("-- ZENIKAZE HUB AUTO JOINER - SISTEMA HÍBRIDO COMPLETO --
+-- ZENIKAZE HUB AUTO JOINER - SISTEMA HÍBRIDO COMPLETO (CORRIGIDO) --
 -- HTTP simples + comandos automáticos no Python
 
 local Players = game:GetService("Players")
@@ -224,7 +188,20 @@ local function getFormattedValue(object)
     end
 end
 
--- Função para enviar dados para o sistema híbrido Python (SIMPLIFICADA)
+-- Função para formatar valor numérico
+local function getFormattedValueFromNumber(value)
+    if value >= 1000000000 then
+        return string.format("%.1fB", value / 1000000000)
+    elseif value >= 1000000 then
+        return string.format("%.1fM", value / 1000000)
+    elseif value >= 1000 then
+        return string.format("%.1fK", value / 1000)
+    else
+        return string.format("%.0f", value)
+    end
+end
+
+-- Função para enviar dados para o sistema híbrido Python (CORRIGIDA)
 local function sendToHybridSystem(foundBrainhots, jobId)
     local serverData = {
         action = "NEW_SERVER_FOUND",
@@ -242,7 +219,7 @@ local function sendToHybridSystem(foundBrainhots, jobId)
             highestValue = 0,
             sessionData = cache.sessionData
         },
-        autoJoinReady = env.ZENIKAZE_CONFIG.autoJoinEnabled,
+        autoJoinReady = getgenv().ZENIKAZE_CONFIG.autoJoinEnabled,
         client_type = "roblox_lua_hybrid"
     }
     
@@ -285,7 +262,7 @@ local function sendToHybridSystem(foundBrainhots, jobId)
     if http_request then
         table.insert(hybridMethods, function()
             return http_request({
-                Url = env.ZENIKAZE_CONFIG.pythonEndpoint,
+                Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
                 Method = "POST",
                 Headers = {
                     ["Content-Type"] = "application/json",
@@ -301,7 +278,7 @@ local function sendToHybridSystem(foundBrainhots, jobId)
     if request then
         table.insert(hybridMethods, function()
             return request({
-                Url = env.ZENIKAZE_CONFIG.pythonEndpoint,
+                Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
                 Method = "POST",
                 Headers = {
                     ["Content-Type"] = "application/json",
@@ -316,7 +293,7 @@ local function sendToHybridSystem(foundBrainhots, jobId)
     if syn and syn.request then
         table.insert(hybridMethods, function()
             return syn.request({
-                Url = env.ZENIKAZE_CONFIG.pythonEndpoint,
+                Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
                 Method = "POST",
                 Headers = {
                     ["Content-Type"] = "application/json",
@@ -387,7 +364,7 @@ local function sendToHybridSystem(foundBrainhots, jobId)
     return hybridSuccess
 end
 
--- Scanner de secrets (SIMPLIFICADO E ROBUSTO)
+-- Scanner de secrets (CORRIGIDO)
 local function checkForHighValueBrainhots()
     local found = {}
     local totalScanned = 0
@@ -409,7 +386,7 @@ local function checkForHighValueBrainhots()
             local plot = plots[plotIndex]
             local isMyPlot = false
             
-            -- Verificar se é meu plot (SIMPLIFICADO)
+            -- Verificar se é meu plot (CORRIGIDO)
             local plotSignSuccess = pcall(function()
                 local plotSign = plot:FindFirstChild("PlotSign")
                 if plotSign then
@@ -481,7 +458,7 @@ local function checkForHighValueBrainhots()
     debugLog(string.format("Objetos escaneados: %d", totalScanned))
     debugLog(string.format("Secrets totais: %d", totalSecrets))
     debugLog(string.format("Secrets aprovados: %d", #found))
-    debugLog(string.format("Valor minimo: %s", getFormattedValueFromNumber(env.ZENIKAZE_CONFIG.minSecretValue)))
+    debugLog(string.format("Valor minimo: %s", getFormattedValueFromNumber(getgenv().ZENIKAZE_CONFIG.minSecretValue)))
     
     if #found > 0 then
         debugLog("SECRETS APROVADOS:")
@@ -489,176 +466,6 @@ local function checkForHighValueBrainhots()
             local brainrot = found[i]
             debugLog(string.format("  %d. %s [%s] - %s", i, brainrot.name, brainrot.rarity, brainrot.value))
         end
-    end
-    
-    return found
-enddValue = getFormattedValue(brainhotInfo.object)
-        })
-    end
-    
-    local jsonData = HttpService:JSONEncode(serverData)
-    
-    -- Tentar enviar para o sistema híbrido Python
-    local hybridMethods = {
-        function() -- Método http_request
-            if http_request then
-                return http_request({
-                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json",
-                        ["X-Source"] = "zenikaze-lua-hybrid",
-                        ["User-Agent"] = "Zenikaze-Hybrid/1.0"
-                    },
-                    Body = jsonData
-                })
-            end
-            return false
-        end,
-        function() -- Método request
-            if request then
-                return request({
-                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json",
-                        ["X-Source"] = "zenikaze-lua-hybrid"
-                    },
-                    Body = jsonData
-                })
-            end
-            return false
-        end,
-        function() -- Método syn.request
-            if syn and syn.request then
-                return syn.request({
-                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json",
-                        ["X-Source"] = "zenikaze-lua-hybrid"
-                    },
-                    Body = jsonData
-                })
-            end
-            return false
-        end
-    }
-    
-    local hybridSuccess = false
-    for _, method in ipairs(hybridMethods) do
-        local success, response = pcall(method)
-        if success and response then
-            hybridSuccess = true
-            cache.sessionData.hybridConnections = cache.sessionData.hybridConnections + 1
-            cache.hybridSystemStatus = "CONNECTED"
-            
-            debugLog("Dados enviados para Sistema Híbrido Python!")
-            
-            -- Processar resposta do sistema híbrido
-            if response.Body then
-                local responseSuccess, responseData = pcall(function()
-                    return HttpService:JSONDecode(response.Body)
-                end)
-                
-                if responseSuccess and responseData then
-                    debugLog(string.format("Sistema Híbrido resposta: %s", responseData.message or "OK"))
-                    
-                    if responseData.is_chilli then
-                        debugLog("🔥 Sistema detectou CHILLI JOIN! 🔥")
-                        debugLog("O Chilli Joiner será aberto automaticamente!")
-                        cache.sessionData.commandsReceived = cache.sessionData.commandsReceived + 1
-                    end
-                    
-                    if responseData.commands_executed then
-                        debugLog("Comandos externos executados no sistema!")
-                        cache.sessionData.commandsReceived = cache.sessionData.commandsReceived + 1
-                    end
-                    
-                    if responseData.highest_value then
-                        debugLog(string.format("Maior valor processado: %s", getFormattedValueFromNumber(responseData.highest_value)))
-                    end
-                    
-                    if responseData.secrets_approved and responseData.secrets_total then
-                        debugLog(string.format("Filtros aplicados: %d/%d secrets aprovados", responseData.secrets_approved, responseData.secrets_total))
-                    end
-                    
-                    if responseData.best_secret then
-                        local best = responseData.best_secret
-                        debugLog(string.format("Melhor secret: %s [%s] - %s", best.name or "Unknown", best.rarity or "Unknown", best.formattedValue or "Unknown"))
-                    end
-                end
-            end
-            break
-        end
-    end
-    
-    if not hybridSuccess then
-        cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
-        cache.hybridSystemStatus = "OFFLINE"
-        debugLog("Falha ao conectar com Sistema Híbrido Python - Sistema offline?", true)
-    end
-    
-    return hybridSuccess
-end
-
--- Scanner de secrets
-local function checkForHighValueBrainhots()
-    local found = {}
-    local totalScanned = 0
-    
-    local success = pcall(function()
-        local workspace = game:GetService("Workspace")
-        local plotsFolder = workspace:FindFirstChild("Plots")
-        
-        if not plotsFolder then 
-            return 
-        end
-        
-        for _, plot in pairs(plotsFolder:GetChildren()) do
-            local isMyPlot = false
-            
-            -- Verificar se é meu plot
-            pcall(function()
-                local plotSign = plot:FindFirstChild("PlotSign")
-                if plotSign and plotSign:FindFirstChild("SurfaceGui") then
-                    local text = plotSign.SurfaceGui.Frame.TextLabel.Text
-                    if text:find(player.Name) then
-                        isMyPlot = true
-                    end
-                end
-            end)
-            
-            if not isMyPlot then
-                for _, descendant in pairs(plot:GetDescendants()) do
-                    if (descendant:IsA("BasePart") or descendant:IsA("MeshPart")) and descendant.Parent then
-                        totalScanned = totalScanned + 1
-                        
-                        local rarity = getRarityFromObject(descendant)
-                        
-                        if rarity == "Secret" then
-                            if isHighValueBrainrot(descendant, rarity) then
-                                local displayName = getDisplayName(descendant)
-                                local formattedValue = getFormattedValue(descendant)
-                                
-                                table.insert(found, {
-                                    name = displayName,
-                                    rarity = rarity,
-                                    value = formattedValue,
-                                    object = descendant
-                                })
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    
-    cache.sessionData.secretsFound = cache.sessionData.secretsFound + #found
-    
-    if getgenv().ZENIKAZE_CONFIG.debugMode then
-        debugLog(string.format("Escaneados: %d objetos, Encontrados: %d secrets 1M+", totalScanned, #found))
     end
     
     return found
@@ -791,12 +598,6 @@ debugLog(string.format("AutoJoin: %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled
 spawn(function()
     wait(2) -- Aguardar inicialização
     
-    local testData = {
-        action = "CONNECTION_TEST",
-        timestamp = DateTime.now():ToIsoDate(),
-        client_type = "roblox_lua_hybrid"
-    }
-    
     local testMethods = {
         function() 
             if http_request then
@@ -833,7 +634,7 @@ spawn(function()
     if not connectionOK then
         cache.hybridSystemStatus = "OFFLINE"
         debugLog("Sistema Híbrido Python offline - Execute o script Python primeiro!", true)
-        debugLog("Execute: python teste.py", true)
+        debugLog("Execute: python zenikaze_autojoiner.py", true)
     end
 end)
 
