@@ -90,9 +90,9 @@ local function buildJoinLink(placeId, jobId)
         return nil
     end
     
-    -- Para servers públicos, usar o jobId diretamente
+    -- Para servers públicos, usar link direto do Roblox
     return string.format(
-        "https://www.roblox.com/games/start?placeId=%d&launchData=%s",
+        "https://www.roblox.com/games/%d/Brainrot-Simulator?gameInstanceId=%s",
         placeId,
         jobId
     )
