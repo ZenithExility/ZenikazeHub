@@ -10,14 +10,19 @@ local player = Players.LocalPlayer
 -- Configurações principais
 getgenv().ZENIKAZE_CONFIG = {
     -- SUBSTITUA COM SEU PROJETO FIREBASE
-    firebaseUrl = "https://sua-base-firebase-default-rtdb.firebaseio.com",
+    firebaseUrl = "https://zenikaze-hub-default-rtdb.firebaseio.com/",
     
     -- Configurações do sistema
-    autoJoinEnabled = true,
+    autoJoinEnabled = false, -- INICIA DESLIGADO
     minSecretValue = 1000000, -- 1M+
     scanInterval = 15,
     cooldownTime = 60,
     debugMode = false,
+    
+    -- Filtros de servidor
+    maxPlayersToJoin = 6, -- Não entrar em servers com mais que 6 players
+    avoidPrivateServers = true, -- Evitar servers privados
+    onlyPublicServers = true, -- Apenas servers públicos
     
     -- ID único do usuário (gerado automaticamente)
     userId = ""
@@ -67,16 +72,45 @@ local function debugLog(message, isError)
     end
 end
 
--- Função para construir link de join
+-- Verificar se é servidor privado
+local function isPrivateServer()
+    local success, result = pcall(function()
+        return game.PrivateServerId ~= "" and game.PrivateServerOwnerId ~= 0
+    end)
+    return success and result
+end
+
+-- Verificar se servidor está lotado
+local function isServerCrowded()
+    local currentPlayers = #Players:GetPlayers()
+    local maxPlayers = Players.MaxPlayers
+    
+    -- Se tem mais que o limite configurado OU está 8/8
+    return currentPlayers > getgenv().ZENIKAZE_CONFIG.maxPlayersToJoin or 
+           (currentPlayers >= 8 and maxPlayers <= 8)
+end
+
+-- Função para construir link de join APENAS para servers públicos
 local function buildJoinLink(placeId, jobId)
+    -- Verificar se é server privado antes de criar link
+    if getgenv().ZENIKAZE_CONFIG.avoidPrivateServers and isPrivateServer() then
+        return nil
+    end
+    
+    -- Verificar se está lotado
+    if isServerCrowded() then
+        return nil
+    end
+    
+    -- Para servers públicos, usar o jobId diretamente
     return string.format(
-        "https://www.roblox.com/games/%d/?privateServerLinkCode=%s",
+        "https://www.roblox.com/games/start?placeId=%d&launchData=%s",
         placeId,
         jobId
     )
 end
 
--- Função para extrair valor do brainrot
+-- Função para extrair valor do brainrot (CORRIGIDA para detectar valores menores)
 local function getBrainrotValue(object)
     if not object or not object.Parent then return 0 end
     
@@ -84,6 +118,15 @@ local function getBrainrotValue(object)
         for _, descendant in pairs(object:GetDescendants()) do
             if descendant:IsA("TextLabel") and descendant.Text then
                 local text = descendant.Text
+                
+                -- Formato B (billions): "1.5B/sec"
+                local bValue = text:match("([%d%.]+)B/?[sS]?e?c?")
+                if bValue then
+                    local num = tonumber(bValue)
+                    if num then
+                        return num * 1000000000
+                    end
+                end
                 
                 -- Formato: "5.2M/sec", "10M/sec", etc.
                 local millionValue = text:match("([%d%.]+)M/?[sS]?e?c?")
@@ -94,16 +137,7 @@ local function getBrainrotValue(object)
                     end
                 end
                 
-                -- Formato números de 7+ dígitos
-                local sevenDigits = text:match("([%d]+)/?[sS]?e?c?")
-                if sevenDigits and #sevenDigits >= 7 then
-                    local num = tonumber(sevenDigits)
-                    if num and num >= 1000000 then
-                        return num
-                    end
-                end
-                
-                -- Formato em K: "1000K/sec", etc.
+                -- Formato em K: "500K/sec", "999K/sec", etc.
                 local kValue = text:match("([%d%.]+)K/?[sS]?e?c?")
                 if kValue then
                     local num = tonumber(kValue)
@@ -112,12 +146,13 @@ local function getBrainrotValue(object)
                     end
                 end
                 
-                -- Formato B (billions): "1.5B/sec"
-                local bValue = text:match("([%d%.]+)B/?[sS]?e?c?")
-                if bValue then
-                    local num = tonumber(bValue)
-                    if num then
-                        return num * 1000000000
+                -- Formato números diretos (incluindo menores que 1M)
+                local directNumber = text:match("([%d,]+)/?[sS]?e?c?")
+                if directNumber then
+                    local cleanNumber = directNumber:gsub(",", "")
+                    local num = tonumber(cleanNumber)
+                    if num and num >= 100000 then -- Detectar valores a partir de 100K
+                        return num
                     end
                 end
             end
@@ -128,7 +163,7 @@ local function getBrainrotValue(object)
     return success and value or 0
 end
 
--- Função para verificar se é Secret 1M+
+-- Função para verificar se é Secret com valor suficiente (CORRIGIDA)
 local function isHighValueBrainrot(object, rarity)
     if not object or not object.Parent then return false end
     
@@ -205,10 +240,27 @@ local function getFormattedValue(object)
     end
 end
 
--- Função para enviar dados para a nuvem (Firebase)
+-- Função para enviar dados para a nuvem (CORRIGIDA)
 local function sendToCloud(foundBrainhots, jobId)
+    -- Verificar se deve evitar servers privados/lotados
+    if getgenv().ZENIKAZE_CONFIG.avoidPrivateServers and isPrivateServer() then
+        debugLog("Server privado detectado - Não enviando para cloud", true)
+        return false
+    end
+    
+    if isServerCrowded() then
+        debugLog("Server lotado detectado - Não enviando para cloud", true)
+        return false
+    end
+    
     local userId = generateUserId()
     local timestamp = tostring(os.time())
+    
+    -- Construir link de join apenas para servers públicos
+    local joinLink = nil
+    if getgenv().ZENIKAZE_CONFIG.onlyPublicServers then
+        joinLink = buildJoinLink(game.PlaceId, jobId)
+    end
     
     local serverData = {
         userId = userId,
@@ -218,7 +270,9 @@ local function sendToCloud(foundBrainhots, jobId)
             placeId = game.PlaceId,
             playerCount = #Players:GetPlayers(),
             maxPlayers = Players.MaxPlayers,
-            joinLink = buildJoinLink(game.PlaceId, jobId)
+            joinLink = joinLink,
+            isPrivate = isPrivateServer(),
+            isCrowded = isServerCrowded()
         },
         secrets = {},
         statistics = {
@@ -366,6 +420,10 @@ end
 
 -- Scanner de secrets (mesmo código anterior)
 local function checkForHighValueBrainhots()
+    if not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled then
+        return {}
+    end
+    
     local found = {}
     local totalScanned = 0
     
@@ -481,42 +539,48 @@ local function printStats()
     debugLog(string.format("Secrets encontrados: %d", stats.secretsFound))
     debugLog(string.format("Conexoes Cloud: %d (Falhas: %d)", stats.cloudConnections, stats.failedConnections))
     debugLog(string.format("Status Cloud: %s", cache.cloudStatus))
+    debugLog(string.format("Sistema: %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "LIGADO" or "DESLIGADO"))
+    debugLog(string.format("Server Status: %s", isPrivateServer() and "PRIVADO" or "PUBLICO"))
+    debugLog(string.format("Players: %d/%d", #Players:GetPlayers(), Players.MaxPlayers))
 end
 
 -- Loop principal
 task.spawn(function()
-    debugLog("Scanner ativo (1M+ Range - Cloud Mode)")
+    debugLog("Scanner carregado - SISTEMA DESLIGADO")
     debugLog(string.format("User ID: %s", generateUserId()))
+    debugLog("Digite '/zenikaze start' para ligar o sistema")
     
     while true do
-        local highValueBrainhots = checkForHighValueBrainhots()
-        
-        if #highValueBrainhots > 0 then
-            local currentTime = tick()
+        if getgenv().ZENIKAZE_CONFIG.autoJoinEnabled then
+            local highValueBrainhots = checkForHighValueBrainhots()
             
-            if brainhotsChanged(highValueBrainhots) then
-                debugLog(string.format("%d Secrets 1M+ detectados!", #highValueBrainhots))
+            if #highValueBrainhots > 0 then
+                local currentTime = tick()
                 
-                if currentTime - cache.lastNotificationTime >= getgenv().ZENIKAZE_CONFIG.cooldownTime then
-                    local cloudSuccess = sendToCloud(highValueBrainhots, game.JobId)
+                if brainhotsChanged(highValueBrainhots) then
+                    debugLog(string.format("%d Secrets 1M+ detectados!", #highValueBrainhots))
                     
-                    if cloudSuccess then
-                        cache.lastNotificationTime = currentTime
-                        cache.lastBrainhots = highValueBrainhots
-                        debugLog("Dados enviados para a nuvem com sucesso!")
+                    if currentTime - cache.lastNotificationTime >= getgenv().ZENIKAZE_CONFIG.cooldownTime then
+                        local cloudSuccess = sendToCloud(highValueBrainhots, game.JobId)
+                        
+                        if cloudSuccess then
+                            cache.lastNotificationTime = currentTime
+                            cache.lastBrainhots = highValueBrainhots
+                            debugLog("Dados enviados para a nuvem com sucesso!")
+                        else
+                            debugLog("Falha na comunicação - tentará novamente no próximo scan", true)
+                        end
                     else
-                        debugLog("Falha na comunicação - tentará novamente no próximo scan", true)
+                        local timeLeft = getgenv().ZENIKAZE_CONFIG.cooldownTime - (currentTime - cache.lastNotificationTime)
+                        debugLog(string.format("Cooldown ativo - %d segundos restantes", math.ceil(timeLeft)))
+                        cache.lastBrainhots = highValueBrainhots
                     end
-                else
-                    local timeLeft = getgenv().ZENIKAZE_CONFIG.cooldownTime - (currentTime - cache.lastNotificationTime)
-                    debugLog(string.format("Cooldown ativo - %d segundos restantes", math.ceil(timeLeft)))
-                    cache.lastBrainhots = highValueBrainhots
                 end
-            end
-        else
-            if #cache.lastBrainhots > 0 then
-                cache.lastBrainhots = {}
-                debugLog("Cache limpo - Nenhum Secret 1M+ encontrado")
+            else
+                if #cache.lastBrainhots > 0 then
+                    cache.lastBrainhots = {}
+                    debugLog("Cache limpo - Nenhum Secret 1M+ encontrado")
+                end
             end
         end
         
@@ -528,20 +592,28 @@ end)
 task.spawn(function()
     while true do
         task.wait(300) -- A cada 5 minutos
-        printStats()
+        if getgenv().ZENIKAZE_CONFIG.autoJoinEnabled then
+            printStats()
+        end
     end
 end)
 
--- Comandos de controle via chat
+-- Comandos de controle via chat (CORRIGIDOS)
 if player then
     player.Chatted:Connect(function(message)
         local msg = message:lower()
         
-        if msg == "/zenikaze status" then
+        if msg == "/zenikaze start" then
+            getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = true
+            debugLog("Sistema LIGADO - Scanner ativo!")
+        elseif msg == "/zenikaze stop" then
+            getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = false
+            debugLog("Sistema DESLIGADO - Scanner parado!")
+        elseif msg == "/zenikaze status" then
             printStats()
         elseif msg == "/zenikaze toggle" then
             getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled
-            debugLog("AutoJoin " .. (getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVADO" or "DESATIVADO"))
+            debugLog("Scanner " .. (getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "LIGADO" or "DESLIGADO"))
         elseif msg == "/zenikaze debug" then
             getgenv().ZENIKAZE_CONFIG.debugMode = not getgenv().ZENIKAZE_CONFIG.debugMode
             debugLog("Debug Mode " .. (getgenv().ZENIKAZE_CONFIG.debugMode and "ATIVADO" or "DESATIVADO"))
@@ -549,8 +621,10 @@ if player then
             debugLog(string.format("Firebase URL: %s/zenikaze/servers/%s", getgenv().ZENIKAZE_CONFIG.firebaseUrl, generateUserId()))
         elseif msg == "/zenikaze help" then
             debugLog("=== COMANDOS ZENIKAZE ===")
+            debugLog("/zenikaze start - Ligar o sistema")
+            debugLog("/zenikaze stop - Desligar o sistema")
             debugLog("/zenikaze status - Mostrar estatisticas")
-            debugLog("/zenikaze toggle - Ligar/desligar AutoJoin")
+            debugLog("/zenikaze toggle - Ligar/desligar scanner")
             debugLog("/zenikaze debug - Ligar/desligar modo debug")
             debugLog("/zenikaze url - Mostrar URL do Firebase")
             debugLog("/zenikaze help - Mostrar este menu")
@@ -562,6 +636,7 @@ end
 -- Inicialização final
 debugLog("Zenikaze Cloud Scanner carregado!")
 debugLog("Sistema DESLIGADO por padrão - Digite '/zenikaze start' para ligar")
-debugLog("IMPORTANTE: Configure sua URL na linha 11!")
+debugLog("IMPORTANTE: Configure sua URL do Firebase na linha 11!")
 debugLog(string.format("Seu User ID: %s", generateUserId()))
 debugLog("Digite '/zenikaze help' no chat para comandos")
+debugLog("FILTROS: Apenas servers públicos, máximo 6 players, evita servers privados")
