@@ -1,5 +1,5 @@
 -- Scanner de secrets (MELHORADO)
-local function checkForHighValueBrainhots()
+    local function checkForHighValueBrainhots()
     local found = {}
     local totalScanned = 0
     local totalSecrets = 0
