@@ -1,4 +1,5 @@
--- ZENIKAZE HUB AUTO JOINER - SISTEMA POR ARQUIVOS (SEM HTTP) --
+-- ZENIKAZE HUB AUTO JOINER - SISTEMA CMD (SEM HTTP) --
+-- Escreve arquivos JSON para comunicação com sistema Python CMD
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -8,44 +9,40 @@ local player = Players.LocalPlayer
 
 -- Configurações principais
 getgenv().ZENIKAZE_CONFIG = {
-    useFileSystem = true, -- Sistema por arquivos (SEM HTTP)
-    inputDir = "zenikaze_input", -- Diretório onde escreve arquivos
-    outputDir = "zenikaze_output", -- Diretório onde lê respostas
+    useCmdSystem = true, -- Sistema por arquivos/comandos (sem HTTP)
     autoJoinEnabled = true,
-    minSecretValue = 1000000, -- 1M+ (será ajustado pelo filtro Python)
+    minSecretValue = 1000000, -- 1M+
     scanInterval = 15,
     cooldownTime = 60,
-    debugMode = false, -- Ativar para logs extras
-    chilliJoinEnabled = true, -- Sistema de join rápido para valores extremos
-    chilliThreshold = 50000000 -- 50M+ para chilli join (configurável no Python)
+    debugMode = false,
+    -- Diretórios para comunicação (devem corresponder ao Python)
+    inputDir = "zenikaze_input",   -- Onde o Lua escreve
+    outputDir = "zenikaze_output", -- Onde o Python escreve respostas
+    maxWaitResponse = 30 -- Tempo máximo para aguardar resposta (segundos)
 }
 
--- Cache persistente global - ESPECÍFICO PARA ZENIKAZE AUTOJOINER
-if not getgenv().ZenikazeHub_AutoJoiner_Cache then
-    getgenv().ZenikazeHub_AutoJoiner_Cache = {
+-- Cache persistente global
+if not getgenv().ZenikazeHub_CMD_Cache then
+    getgenv().ZenikazeHub_CMD_Cache = {
         lastBrainhots = {},
         lastNotificationTime = 0,
         serverJobId = "",
         sessionData = {
             serversScanned = 0,
             secretsFound = 0,
-            autoJoinsAttempted = 0,
-            successfulJoins = 0,
-            filesSent = 0,
-            failedWrites = 0,
-            chilliJoins = 0
+            filesWritten = 0,
+            responsesReceived = 0,
+            cmdConnections = 0,
+            failedConnections = 0
         },
-        queuedServers = {}, -- Servidores na fila para join
-        currentlyJoining = false,
-        joinHistory = {}, -- Histórico de joins para evitar loops
-        pythonStatus = "UNKNOWN", -- Status da conexão Python
-        requestCounter = 0 -- Contador para IDs únicos
+        requestCounter = 0,
+        cmdSystemStatus = "UNKNOWN"
     }
 end
 
-local cache = getgenv().ZenikazeHub_AutoJoiner_Cache
+local cache = getgenv().ZenikazeHub_CMD_Cache
 
--- Função para logs com debug
+-- Função para logs
 local function debugLog(message, isError)
     local prefix = isError and "[X] Zenikaze ERROR:" or "[*] Zenikaze:"
     local fullMessage = string.format("%s %s", prefix, message)
@@ -57,6 +54,12 @@ local function debugLog(message, isError)
     end
 end
 
+-- Função para gerar ID único para request
+local function generateRequestId()
+    cache.requestCounter = cache.requestCounter + 1
+    return string.format("%s_%d_%d", player.Name, os.time(), cache.requestCounter)
+end
+
 -- Função para construir link de join
 local function buildJoinLink(placeId, jobId)
     return string.format(
@@ -64,30 +67,6 @@ local function buildJoinLink(placeId, jobId)
         placeId,
         jobId
     )
-end
-
--- Função para gerar ID único do request
-local function generateRequestId()
-    cache.requestCounter = cache.requestCounter + 1
-    return string.format("%s_%d_%d", player.UserId or 0, os.time(), cache.requestCounter)
-end
-
--- Função para criar diretórios (via writefile)
-local function ensureDirectories()
-    local success = pcall(function()
-        -- Tentar criar um arquivo temporário para garantir que o diretório existe
-        writefile(getgenv().ZENIKAZE_CONFIG.inputDir .. "/test.tmp", "test")
-        delfile(getgenv().ZENIKAZE_CONFIG.inputDir .. "/test.tmp")
-        
-        writefile(getgenv().ZENIKAZE_CONFIG.outputDir .. "/test.tmp", "test")
-        delfile(getgenv().ZENIKAZE_CONFIG.outputDir .. "/test.tmp")
-        
-        debugLog("Diretorios verificados/criados com sucesso")
-    end)
-    
-    if not success then
-        debugLog("Erro ao criar diretorios - verifique permissoes", true)
-    end
 end
 
 -- Função para extrair valor do brainrot
@@ -108,17 +87,7 @@ local function getBrainrotValue(object)
                     end
                 end
                 
-                -- Formato: "5,000,000/sec", "10,000,000", etc.
-                local commaValue = text:match("([%d,]+),000,000/?[sS]?e?c?")
-                if commaValue then
-                    local cleanNum = commaValue:gsub(",", "")
-                    local num = tonumber(cleanNum)
-                    if num then
-                        return num * 1000000
-                    end
-                end
-                
-                -- Formato: números de 7+ dígitos (baixado de 8 para 7)
+                -- Formato números de 7+ dígitos
                 local sevenDigits = text:match("([%d]+)/?[sS]?e?c?")
                 if sevenDigits and #sevenDigits >= 7 then
                     local num = tonumber(sevenDigits)
@@ -222,31 +191,86 @@ local function getFormattedValue(object)
         return string.format("%.1fB/sec", billions)
     elseif brainrotValue >= 1000000 then
         local millions = brainrotValue / 1000000
-        if millions == math.floor(millions) then
-            return string.format("%.0fM/sec", millions)
-        else
-            return string.format("%.1fM/sec", millions)
-        end
+        return string.format("%.1fM/sec", millions)
     elseif brainrotValue >= 1000 then
         local thousands = brainrotValue / 1000
-        if thousands == math.floor(thousands) then
-            return string.format("%.0fK/sec", thousands)
-        else
-            return string.format("%.1fK/sec", thousands)
-        end
+        return string.format("%.1fK/sec", thousands)
     else
         return string.format("%.0f/sec", brainrotValue)
     end
 end
 
--- Função para enviar dados via arquivo para o terminal Python
-local function sendDataViaFile(foundBrainhots, jobId)
+-- Função para escrever arquivo para o sistema CMD Python
+local function writeFileForCmdSystem(data, requestId)
+    local fileName = string.format("request_%s.json", requestId)
+    local filePath = string.format("%s/%s", getgenv().ZENIKAZE_CONFIG.inputDir, fileName)
+    
+    local success = pcall(function()
+        local jsonData = HttpService:JSONEncode(data)
+        
+        -- Tentar usar writefile se disponível
+        if writefile then
+            writefile(filePath, jsonData)
+            cache.sessionData.filesWritten = cache.sessionData.filesWritten + 1
+            debugLog(string.format("Arquivo escrito: %s", fileName))
+            return true
+        else
+            debugLog("Função writefile não disponível no executor", true)
+            return false
+        end
+    end)
+    
+    return success
+end
+
+-- Função para ler resposta do sistema CMD Python
+local function readResponseFromCmdSystem(requestId)
+    local fileName = string.format("response_%s.json", requestId)
+    local filePath = string.format("%s/%s", getgenv().ZENIKAZE_CONFIG.outputDir, fileName)
+    
+    local startTime = tick()
+    local maxWait = getgenv().ZENIKAZE_CONFIG.maxWaitResponse
+    
+    while tick() - startTime < maxWait do
+        local success, data = pcall(function()
+            if readfile then
+                local jsonContent = readfile(filePath)
+                if jsonContent and jsonContent ~= "" then
+                    local responseData = HttpService:JSONDecode(jsonContent)
+                    
+                    -- Tentar deletar arquivo após leitura
+                    pcall(function()
+                        if delfile then
+                            delfile(filePath)
+                        end
+                    end)
+                    
+                    cache.sessionData.responsesReceived = cache.sessionData.responsesReceived + 1
+                    return responseData
+                end
+            end
+            return nil
+        end)
+        
+        if success and data then
+            return data
+        end
+        
+        task.wait(0.5) -- Aguardar meio segundo antes de tentar novamente
+    end
+    
+    debugLog(string.format("Timeout aguardando resposta: %s", fileName), true)
+    return nil
+end
+
+-- Função para enviar dados para o sistema CMD Python
+local function sendToCmdSystem(foundBrainhots, jobId)
     local requestId = generateRequestId()
     
     local serverData = {
         action = "NEW_SERVER_FOUND",
-        request_id = requestId,
         timestamp = DateTime.now():ToIsoDate(),
+        request_id = requestId,
         server = {
             jobId = jobId,
             placeId = game.PlaceId,
@@ -260,7 +284,8 @@ local function sendDataViaFile(foundBrainhots, jobId)
             highestValue = 0,
             sessionData = cache.sessionData
         },
-        autoJoinReady = getgenv().ZENIKAZE_CONFIG.autoJoinEnabled
+        autoJoinReady = getgenv().ZENIKAZE_CONFIG.autoJoinEnabled,
+        client_type = "roblox_lua_cmd_system"
     }
     
     -- Processar secrets encontrados
@@ -279,81 +304,40 @@ local function sendDataViaFile(foundBrainhots, jobId)
         })
     end
     
-    local jsonData = HttpService:JSONEncode(serverData)
+    -- Escrever arquivo
+    local writeSuccess = writeFileForCmdSystem(serverData, requestId)
     
-    -- Escrever arquivo no diretório de input
-    local filename = string.format("request_%s.json", requestId)
-    local filepath = getgenv().ZENIKAZE_CONFIG.inputDir .. "/" .. filename
+    if not writeSuccess then
+        cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
+        cache.cmdSystemStatus = "OFFLINE"
+        debugLog("Falha ao escrever arquivo - Sistema de arquivos não disponível?", true)
+        return false
+    end
     
-    local success = pcall(function()
-        writefile(filepath, jsonData)
-    end)
+    debugLog("Dados enviados via arquivo para Sistema CMD Python!")
     
-    if success then
-        cache.sessionData.filesSent = cache.sessionData.filesSent + 1
-        cache.pythonStatus = "FILE_SENT"
-        debugLog(string.format("Arquivo enviado: %s", filename))
+    -- Aguardar resposta
+    local response = readResponseFromCmdSystem(requestId)
+    
+    if response then
+        cache.sessionData.cmdConnections = cache.sessionData.cmdConnections + 1
+        cache.cmdSystemStatus = "CONNECTED"
         
-        -- Aguardar resposta (opcional - não bloqueia)
-        spawn(function()
-            local maxWait = 30 -- Aguardar até 30 segundos por resposta
-            local waited = 0
-            local responseFile = getgenv().ZENIKAZE_CONFIG.outputDir .. "/response_" .. requestId .. ".json"
-            
-            while waited < maxWait do
-                local hasResponse = pcall(function()
-                    return readfile(responseFile)
-                end)
-                
-                if hasResponse then
-                    local responseSuccess, responseData = pcall(function()
-                        local content = readfile(responseFile)
-                        return HttpService:JSONDecode(content)
-                    end)
-                    
-                    if responseSuccess and responseData then
-                        debugLog(string.format("Resposta Python: %s", responseData.message or "OK"))
-                        
-                        if responseData.autoJoinCommand then
-                            debugLog("AutoJoin confirmado pelo Python!")
-                        end
-                        
-                        if responseData.chilliJoinCommand then
-                            debugLog("Sistema Chilli Join ativo no Python!")
-                        end
-                        
-                        if responseData.stats then
-                            debugLog(string.format("Python Stats - Fila Normal: %d, Fila Chilli: %d", 
-                                responseData.queue_size or 0,
-                                responseData.chilli_queue_size or 0
-                            ))
-                        end
-                    end
-                    
-                    -- Limpar arquivo de resposta
-                    pcall(function()
-                        delfile(responseFile)
-                    end)
-                    
-                    cache.pythonStatus = "CONNECTED"
-                    break
-                end
-                
-                wait(1)
-                waited = waited + 1
-            end
-            
-            if waited >= maxWait then
-                cache.pythonStatus = "NO_RESPONSE"
-                debugLog("Timeout aguardando resposta do Python", true)
-            end
-        end)
+        debugLog(string.format("Sistema CMD resposta: %s", response.message or "OK"))
+        
+        if response.is_chilli then
+            debugLog("Sistema CMD detectou CHILLI JOIN!")
+        end
+        
+        if response.highest_value then
+            debugLog(string.format("Maior valor processado: %d", response.highest_value))
+        end
         
         return true
     else
-        cache.sessionData.failedWrites = cache.sessionData.failedWrites + 1
-        cache.pythonStatus = "WRITE_ERROR"
-        debugLog("Falha ao escrever arquivo - verifique permissoes", true)
+        cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
+        cache.cmdSystemStatus = "TIMEOUT"
+        debugLog("Timeout aguardando resposta do Sistema CMD", true)
         return false
     end
 end
@@ -426,9 +410,7 @@ if cache.serverJobId ~= game.JobId then
     cache.lastBrainhots = {}
     cache.lastNotificationTime = 0
     cache.sessionData.serversScanned = cache.sessionData.serversScanned + 1
-    cache.queuedServers = {} -- Limpar fila ao mudar de servidor
-    cache.currentlyJoining = false
-    cache.pythonStatus = "UNKNOWN"
+    cache.cmdSystemStatus = "UNKNOWN"
     debugLog("Novo servidor detectado - Sistema resetado")
 end
 
@@ -474,17 +456,32 @@ local function printStats()
     debugLog("=== ESTATISTICAS DA SESSAO ===")
     debugLog(string.format("Servidores escaneados: %d", stats.serversScanned))
     debugLog(string.format("Secrets encontrados: %d", stats.secretsFound))
-    debugLog(string.format("Arquivos enviados: %d (Falhas: %d)", stats.filesSent, stats.failedWrites))
-    debugLog(string.format("Status Python: %s", cache.pythonStatus))
+    debugLog(string.format("Arquivos escritos: %d", stats.filesWritten))
+    debugLog(string.format("Respostas recebidas: %d", stats.responsesReceived))
+    debugLog(string.format("Status Sistema CMD: %s", cache.cmdSystemStatus))
 end
 
--- Inicializar diretórios
-ensureDirectories()
+-- Verificar se o sistema de arquivos está disponível
+local function checkFileSystemSupport()
+    if not writefile or not readfile then
+        debugLog("ERRO: Sistema de arquivos não suportado!", true)
+        debugLog("Seu executor precisa ter writefile e readfile", true)
+        return false
+    end
+    
+    debugLog("Sistema de arquivos disponível - Modo CMD ativo", "SUCCESS")
+    return true
+end
 
 -- Loop principal
 task.spawn(function()
-    debugLog("Scanner ativo (1M+ Range - Sistema por arquivos)")
-    debugLog("SEM necessidade de HTTP - 100% baseado em arquivos!")
+    -- Verificar suporte ao sistema de arquivos
+    if not checkFileSystemSupport() then
+        debugLog("Sistema encerrado - executor incompatível", true)
+        return
+    end
+    
+    debugLog("Scanner ativo (1M+ Range - Sistema CMD)")
     
     while true do
         local highValueBrainhots = checkForHighValueBrainhots()
@@ -496,14 +493,14 @@ task.spawn(function()
                 debugLog(string.format("%d Secrets 1M+ detectados!", #highValueBrainhots))
                 
                 if currentTime - cache.lastNotificationTime >= getgenv().ZENIKAZE_CONFIG.cooldownTime then
-                    local fileSuccess = sendDataViaFile(highValueBrainhots, game.JobId)
+                    local cmdSuccess = sendToCmdSystem(highValueBrainhots, game.JobId)
                     
-                    if fileSuccess then
+                    if cmdSuccess then
                         cache.lastNotificationTime = currentTime
                         cache.lastBrainhots = highValueBrainhots
-                        debugLog("Dados enviados via arquivo para Python!")
+                        debugLog("Dados enviados via arquivo para Sistema CMD!")
                     else
-                        debugLog("Falha ao enviar arquivo - tentara novamente no proximo scan", true)
+                        debugLog("Falha na comunicação - tentara novamente no proximo scan", true)
                     end
                 else
                     local timeLeft = getgenv().ZENIKAZE_CONFIG.cooldownTime - (currentTime - cache.lastNotificationTime)
@@ -531,33 +528,6 @@ task.spawn(function()
 end)
 
 -- Comandos de controle via chat
-Players.PlayerAdded:Connect(function(plr)
-    if plr == player then
-        plr.Chatted:Connect(function(message)
-            local msg = message:lower()
-            
-            if msg == "/zenikaze status" then
-                printStats()
-            elseif msg == "/zenikaze toggle" then
-                getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled
-                debugLog("AutoJoin " .. (getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVADO" or "DESATIVADO"))
-            elseif msg == "/zenikaze debug" then
-                getgenv().ZENIKAZE_CONFIG.debugMode = not getgenv().ZENIKAZE_CONFIG.debugMode
-                debugLog("Debug Mode " .. (getgenv().ZENIKAZE_CONFIG.debugMode and "ATIVADO" or "DESATIVADO"))
-            elseif msg == "/zenikaze help" then
-                debugLog("=== COMANDOS ZENIKAZE ===")
-                debugLog("/zenikaze status - Mostrar estatisticas")
-                debugLog("/zenikaze toggle - Ligar/desligar AutoJoin")
-                debugLog("/zenikaze debug - Ligar/desligar modo debug")
-                debugLog("/zenikaze help - Mostrar este menu")
-                debugLog("Configure valores no terminal Python!")
-                debugLog("Sistema por arquivos - SEM HTTP!")
-            end
-        end)
-    end
-end)
-
--- Se o jogador já estiver no jogo, conectar o chat
 if player then
     player.Chatted:Connect(function(message)
         local msg = message:lower()
@@ -576,31 +546,14 @@ if player then
             debugLog("/zenikaze toggle - Ligar/desligar AutoJoin")
             debugLog("/zenikaze debug - Ligar/desligar modo debug")
             debugLog("/zenikaze help - Mostrar este menu")
-            debugLog("Configure valores no terminal Python!")
-            debugLog("Sistema por arquivos - SEM HTTP!")
+            debugLog("Sistema CMD - executa comandos automaticamente!")
         end
     end)
 end
 
--- Função de limpeza ao sair do jogo
-game.Players.PlayerRemoving:Connect(function(plr)
-    if plr == player then
-        debugLog("Jogador saindo - salvando estatisticas...")
-        printStats()
-    end
-end)
-
 -- Inicialização final
-debugLog("Zenikaze AutoJoiner carregado com sucesso!")
-debugLog("Sistema por arquivos - SEM necessidade de HTTP!")
-debugLog("Script Lua configurado para 1M+ (ajustavel no Python)")
-debugLog("Digite '/zenikaze help' no chat para ver comandos disponiveis")
-debugLog("Configure filtros no terminal Python com 'help'")
-
--- Log final de inicialização
-debugLog("=== SISTEMA INICIALIZADO ===")
-debugLog(string.format("AutoJoin: %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVO" or "INATIVO"))
-debugLog(string.format("Modo: Sistema por arquivos (SEM HTTP)"))
-debugLog(string.format("Scan Interval: %ds", getgenv().ZENIKAZE_CONFIG.scanInterval))
-debugLog("AutoJoiner pronto para detectar Secrets 1M+!")
-debugLog("Use comandos no Python para ajustar filtros!")
+debugLog("Zenikaze AutoJoiner carregado - Sistema CMD!")
+debugLog("NENHUMA PORTA HTTP necessária!")
+debugLog("Script Lua -> Arquivos JSON -> Sistema CMD Python")
+debugLog("Execute o Sistema CMD Python para processar os arquivos")
+debugLog("Digite '/zenikaze help' no chat para comandos")
