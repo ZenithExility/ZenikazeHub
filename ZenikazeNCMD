@@ -1,50 +1,238 @@
--- ZENIKAZE HUB AUTO JOINER - SISTEMA HÍBRIDO COMPLETO (CORRIGIDO) --
--- HTTP simples + comandos automáticos no Python
+-- ZENIKAZE CLOUD AUTOJOINER - URL FIXA PERMANENTE
+-- Esta URL NUNCA muda - pode compartilhar à vontade!
+-- Múltiplos usuários podem usar o mesmo endpoint
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local TeleportService = game:GetService("TeleportService")
 local player = Players.LocalPlayer
 
--- Configurações principais
-getgenv().ZENIKAZE_CONFIG = {
-    pythonEndpoint = "http://localhost:8080", -- Endpoint do sistema híbrido Python
-    autoJoinEnabled = true,
-    minSecretValue = 1000000, -- 1M+
-    scanInterval = 15,
-    cooldownTime = 60,
-    debugMode = false
+-- ⚡ CONFIGURAÇÃO FIXA - NÃO PRECISA MUDAR! ⚡
+getgenv().ZENIKAZE_CLOUD_CONFIG = {
+    cloudServer = "https://zenikaze-autojoiner.onrender.com",  -- URL FIXA PERMANENTE!
+    roomId = "global",              -- Sala (global, vip, premium, etc)
+    scanInterval = 25,              -- Intervalo entre scans
+    minSecretValue = 1000000,       -- 1M+ mínimo local
+    clientName = player.Name,       -- Seu nome no Roblox
+    debugMode = false,              -- Logs detalhados
+    autoReconnect = true,           -- Reconectar automaticamente
+    version = "2.0-CLOUD"
 }
 
--- Cache persistente global
-if not getgenv().ZenikazeHub_Hybrid_Cache then
-    getgenv().ZenikazeHub_Hybrid_Cache = {
-        lastBrainhots = {},
-        lastNotificationTime = 0,
-        serverJobId = "",
-        sessionData = {
-            serversScanned = 0,
-            secretsFound = 0,
-            hybridConnections = 0,
-            failedConnections = 0,
-            commandsReceived = 0
-        },
-        hybridSystemStatus = "UNKNOWN"
+-- Cache do cliente
+if not getgenv().ZenikazeCloud_Cache then
+    getgenv().ZenikazeCloud_Cache = {
+        sessionId = "",
+        lastScan = 0,
+        totalScans = 0,
+        serversSent = 0,
+        secretsFound = 0,
+        connectionStatus = "UNKNOWN",
+        lastServerSent = "",
+        sessionStart = tick(),
+        roomConnected = "",
+        lastNotification = ""
     }
 end
 
-local cache = getgenv().ZenikazeHub_Hybrid_Cache
+local cache = getgenv().ZenikazeCloud_Cache
 
--- Função para logs
-local function debugLog(message, isError)
-    local prefix = isError and "[X] Zenikaze ERROR:" or "[*] Zenikaze:"
+-- Gerar ID único da sessão
+if cache.sessionId == "" then
+    cache.sessionId = player.UserId .. "_" .. math.random(1000, 9999) .. "_" .. os.time()
+end
+
+-- Função para logs do cliente
+local function cloudLog(message, level)
+    level = level or "INFO"
+    local timestamp = os.date("%H:%M:%S")
+    local levelColor = {
+        ["INFO"] = "🟦",
+        ["SUCCESS"] = "🟢", 
+        ["WARNING"] = "🟡",
+        ["ERROR"] = "🔴",
+        ["CLOUD"] = "☁️",
+        ["SERVER"] = "🎯"
+    }
+    
+    local icon = levelColor[level] or "ℹ️"
+    local prefix = string.format("[%s] %s Zenikaze Cloud:", timestamp, icon)
     local fullMessage = string.format("%s %s", prefix, message)
     
     print(fullMessage)
+    cache.lastNotification = message
     
-    if getgenv().ZENIKAZE_CONFIG.debugMode then
-        warn(string.format("[DEBUG %s] %s", os.date("%H:%M:%S"), message))
+    if getgenv().ZENIKAZE_CLOUD_CONFIG.debugMode then
+        warn(string.format("[DEBUG %s] %s", timestamp, message))
+    end
+end
+
+-- Função para testar conexão com a nuvem
+local function testCloudConnection()
+    local testEndpoints = {
+        getgenv().ZENIKAZE_CLOUD_CONFIG.cloudServer .. "/api/status",
+        getgenv().ZENIKAZE_CLOUD_CONFIG.cloudServer .. "/"
+    }
+    
+    for _, endpoint in ipairs(testEndpoints) do
+        local testMethods = {
+            function()
+                if http_request then
+                    return http_request({
+                        Url = endpoint,
+                        Method = "GET",
+                        Headers = {
+                            ["User-Agent"] = "Zenikaze-Cloud-Client/" .. getgenv().ZENIKAZE_CLOUD_CONFIG.version,
+                            ["X-Client-ID"] = cache.sessionId,
+                            ["X-Room-ID"] = getgenv().ZENIKAZE_CLOUD_CONFIG.roomId
+                        },
+                        Timeout = 15
+                    })
+                end
+                return false
+            end,
+            function()
+                if request then
+                    return request({
+                        Url = endpoint,
+                        Method = "GET",
+                        Headers = {
+                            ["User-Agent"] = "Zenikaze-Cloud-Client"
+                        },
+                        Timeout = 15
+                    })
+                end
+                return false
+            end
+        }
+        
+        for _, method in ipairs(testMethods) do
+            local success, response = pcall(method)
+            if success and response and (response.StatusCode == 200 or response.Success) then
+                cache.connectionStatus = "CONNECTED"
+                cache.roomConnected = getgenv().ZENIKAZE_CLOUD_CONFIG.roomId
+                return true, endpoint
+            end
+        end
+    end
+    
+    cache.connectionStatus = "OFFLINE"
+    return false, nil
+end
+
+-- Função para obter valor do brainrot (otimizada)
+local function getBrainrotValue(object)
+    if not object or not object.Parent then return 0 end
+    
+    local success, value = pcall(function()
+        local descendants = object:GetDescendants()
+        
+        for i = 1, math.min(#descendants, 50) do  -- Limitar busca para performance
+            local descendant = descendants[i]
+            
+            if descendant:IsA("TextLabel") and descendant.Text then
+                local text = descendant.Text
+                
+                -- Formato Bilhões: "1.5B/sec"
+                local bValue = text:match("([%d%.]+)B/?[sS]?e?c?")
+                if bValue then
+                    local num = tonumber(bValue)
+                    if num then return num * 1000000000 end
+                end
+                
+                -- Formato Milhões: "5.2M/sec"
+                local mValue = text:match("([%d%.]+)M/?[sS]?e?c?")
+                if mValue then
+                    local num = tonumber(mValue)
+                    if num then return num * 1000000 end
+                end
+                
+                -- Formato números grandes: "1234567"
+                local bigNumber = text:match("([%d]+)/?[sS]?e?c?")
+                if bigNumber and #bigNumber >= 7 then
+                    local num = tonumber(bigNumber)
+                    if num and num >= 1000000 then return num end
+                end
+                
+                -- Formato K: "1000K/sec"
+                local kValue = text:match("([%d%.]+)K/?[sS]?e?c?")
+                if kValue then
+                    local num = tonumber(kValue)
+                    if num and num >= 100 then return num * 1000 end
+                end
+            end
+        end
+        return 0
+    end)
+    
+    return success and value or 0
+end
+
+-- Função para detectar raridade (otimizada)
+local function getRarityFromObject(object)
+    if not object or not object.Parent then return nil end
+    
+    local success, result = pcall(function()
+        local descendants = object:GetDescendants()
+        
+        for i = 1, math.min(#descendants, 20) do
+            local descendant = descendants[i]
+            
+            -- Procurar por TextLabel com raridade
+            if descendant:IsA("TextLabel") then
+                if descendant.Name == "Rarity" then
+                    return descendant.Text:gsub("%s+", "")
+                end
+                
+                if descendant.Name == "DisplayName" then
+                    local displayText = descendant.Text
+                    for rarity in displayText:gmatch("%[([^%]]+)%]") do
+                        return rarity
+                    end
+                end
+            end
+        end
+        
+        -- Fallback: detectar por cor do objeto
+        if object:IsA("BasePart") then
+            local color = object.Color
+            if color == Color3.fromRGB(100, 100, 100) then return "Secret" end
+            if color == Color3.fromRGB(180, 40, 180) then return "BrainrotGod" end
+        end
+        
+        return nil
+    end)
+    
+    return success and result or nil
+end
+
+-- Função para obter nome do item
+local function getDisplayName(object)
+    local success, result = pcall(function()
+        local descendants = object:GetDescendants()
+        
+        for i = 1, math.min(#descendants, 15) do
+            local child = descendants[i]
+            if child:IsA("TextLabel") and child.Name == "DisplayName" then
+                return child.Text
+            end
+        end
+        return object.Name
+    end)
+    
+    return success and result or (object.Name or "Unknown")
+end
+
+-- Função para formatar valor
+local function formatValue(brainrotValue)
+    if brainrotValue >= 1000000000 then
+        return string.format("%.1fB/sec", brainrotValue / 1000000000)
+    elseif brainrotValue >= 1000000 then
+        return string.format("%.1fM/sec", brainrotValue / 1000000)
+    elseif brainrotValue >= 1000 then
+        return string.format("%.1fK/sec", brainrotValue / 1000)
+    else
+        return string.format("%.0f/sec", brainrotValue)
     end
 end
 
@@ -57,155 +245,34 @@ local function buildJoinLink(placeId, jobId)
     )
 end
 
--- Função para extrair valor do brainrot
-local function getBrainrotValue(object)
-    if not object or not object.Parent then return 0 end
-    
-    local success, value = pcall(function()
-        for _, descendant in pairs(object:GetDescendants()) do
-            if descendant:IsA("TextLabel") and descendant.Text then
-                local text = descendant.Text
-                
-                -- Formato: "5.2M/sec", "10M/sec", etc.
-                local millionValue = text:match("([%d%.]+)M/?[sS]?e?c?")
-                if millionValue then
-                    local num = tonumber(millionValue)
-                    if num then
-                        return num * 1000000
-                    end
-                end
-                
-                -- Formato números de 7+ dígitos
-                local sevenDigits = text:match("([%d]+)/?[sS]?e?c?")
-                if sevenDigits and #sevenDigits >= 7 then
-                    local num = tonumber(sevenDigits)
-                    if num and num >= 1000000 then
-                        return num
-                    end
-                end
-                
-                -- Formato em K: "1000K/sec", etc.
-                local kValue = text:match("([%d%.]+)K/?[sS]?e?c?")
-                if kValue then
-                    local num = tonumber(kValue)
-                    if num then
-                        return num * 1000
-                    end
-                end
-                
-                -- Formato B (billions): "1.5B/sec"
-                local bValue = text:match("([%d%.]+)B/?[sS]?e?c?")
-                if bValue then
-                    local num = tonumber(bValue)
-                    if num then
-                        return num * 1000000000
-                    end
-                end
-            end
+-- Função principal: enviar dados para a nuvem
+local function sendToCloud(foundSecrets, jobId)
+    if cache.connectionStatus ~= "CONNECTED" then
+        cloudLog("Sem conexão com nuvem - tentando reconectar...", "WARNING")
+        local connected, endpoint = testCloudConnection()
+        if not connected then
+            cloudLog("Falha ao conectar com servidor na nuvem!", "ERROR")
+            return false
         end
-        return 0
-    end)
-    
-    return success and value or 0
-end
-
--- Função para verificar se é Secret 1M+
-local function isHighValueBrainrot(object, rarity)
-    if not object or not object.Parent then return false end
-    
-    if rarity ~= "Secret" then
-        return false
+        cloudLog("Reconectado ao servidor na nuvem!", "SUCCESS")
     end
     
-    local brainrotValue = getBrainrotValue(object)
-    return brainrotValue >= getgenv().ZENIKAZE_CONFIG.minSecretValue
-end
-
--- Função para detectar raridade
-local function getRarityFromObject(object)
-    if not object or not object.Parent then return nil end
-    
-    local success, result = pcall(function()
-        for _, descendant in pairs(object:GetDescendants()) do
-            if descendant.Name == "Rarity" and descendant:IsA("TextLabel") then
-                local rarityText = descendant.Text:gsub("%s+", "")
-                return rarityText
-            end
-            
-            if descendant.Name == "DisplayName" and descendant:IsA("TextLabel") then
-                local displayText = descendant.Text
-                for rarity in displayText:gmatch("%[([^%]]+)%]") do
-                    return rarity
-                end
-            end
-        end
-        
-        -- Detectar por cor
-        if object:IsA("BasePart") then
-            local color = object.Color
-            if color == Color3.fromRGB(100, 100, 100) then
-                return "Secret"
-            elseif color == Color3.fromRGB(180, 40, 180) then
-                return "BrainrotGod"
-            end
-        end
-        
-        return nil
-    end)
-    
-    return success and result or nil
-end
-
--- Função para obter nome do item
-local function getDisplayName(object)
-    local success, result = pcall(function()
-        for _, child in pairs(object:GetDescendants()) do
-            if child.Name == "DisplayName" and child:IsA("TextLabel") then
-                return child.Text
-            end
-        end
-        return object.Name
-    end)
-    
-    return success and result or (object.Name or "Brainrot")
-end
-
--- Função para formatar valor
-local function getFormattedValue(object)
-    local brainrotValue = getBrainrotValue(object)
-    
-    if brainrotValue >= 1000000000 then
-        local billions = brainrotValue / 1000000000
-        return string.format("%.1fB/sec", billions)
-    elseif brainrotValue >= 1000000 then
-        local millions = brainrotValue / 1000000
-        return string.format("%.1fM/sec", millions)
-    elseif brainrotValue >= 1000 then
-        local thousands = brainrotValue / 1000
-        return string.format("%.1fK/sec", thousands)
-    else
-        return string.format("%.0f/sec", brainrotValue)
-    end
-end
-
--- Função para formatar valor numérico
-local function getFormattedValueFromNumber(value)
-    if value >= 1000000000 then
-        return string.format("%.1fB", value / 1000000000)
-    elseif value >= 1000000 then
-        return string.format("%.1fM", value / 1000000)
-    elseif value >= 1000 then
-        return string.format("%.1fK", value / 1000)
-    else
-        return string.format("%.0f", value)
-    end
-end
-
--- Função para enviar dados para o sistema híbrido Python (CORRIGIDA)
-local function sendToHybridSystem(foundBrainhots, jobId)
-    local serverData = {
+    -- Montar dados para enviar
+    local cloudData = {
         action = "NEW_SERVER_FOUND",
-        timestamp = DateTime.now and DateTime.now():ToIsoDate() or "2025-01-01T00:00:00Z",
+        timestamp = DateTime.now and DateTime.now():ToIsoDate() or os.date("%Y-%m-%dT%H:%M:%SZ"),
+        
+        -- Informações do cliente
+        client_info = {
+            session_id = cache.sessionId,
+            name = getgenv().ZENIKAZE_CLOUD_CONFIG.clientName,
+            version = getgenv().ZENIKAZE_CLOUD_CONFIG.version,
+            roblox_user = player.Name,
+            user_id = player.UserId,
+            room_id = getgenv().ZENIKAZE_CLOUD_CONFIG.roomId
+        },
+        
+        -- Informações do servidor
         server = {
             jobId = jobId,
             placeId = game.PlaceId,
@@ -213,159 +280,156 @@ local function sendToHybridSystem(foundBrainhots, jobId)
             maxPlayers = Players.MaxPlayers,
             joinLink = buildJoinLink(game.PlaceId, jobId)
         },
+        
+        -- Secrets encontrados
         secrets = {},
+        
+        -- Estatísticas da sessão
         statistics = {
-            totalSecrets = #foundBrainhots,
+            totalSecrets = #foundSecrets,
             highestValue = 0,
-            sessionData = cache.sessionData
-        },
-        autoJoinReady = getgenv().ZENIKAZE_CONFIG.autoJoinEnabled,
-        client_type = "roblox_lua_hybrid"
+            scanTime = tick() - cache.lastScan,
+            clientStats = {
+                totalScans = cache.totalScans,
+                serversSent = cache.serversSent,
+                secretsFound = cache.secretsFound,
+                sessionUptime = tick() - cache.sessionStart
+            }
+        }
     }
     
-    -- Processar secrets encontrados
-    for i = 1, #foundBrainhots do
-        local brainhotInfo = foundBrainhots[i]
-        local rawValue = brainhotInfo.rawValue or 0
+    -- Processar secrets
+    for i = 1, #foundSecrets do
+        local secretInfo = foundSecrets[i]
+        local rawValue = secretInfo.rawValue or 0
         
-        if rawValue > serverData.statistics.highestValue then
-            serverData.statistics.highestValue = rawValue
+        if rawValue > cloudData.statistics.highestValue then
+            cloudData.statistics.highestValue = rawValue
         end
         
-        local secretData = {
-            name = brainhotInfo.name,
-            rarity = brainhotInfo.rarity,
-            value = brainhotInfo.value,
+        table.insert(cloudData.secrets, {
+            name = secretInfo.name,
+            rarity = secretInfo.rarity,
+            value = secretInfo.value,
             rawValue = rawValue,
-            formattedValue = brainhotInfo.value
-        }
-        
-        table.insert(serverData.secrets, secretData)
+            formattedValue = secretInfo.value
+        })
     end
     
+    -- Converter para JSON
     local jsonData
     local success, result = pcall(function()
-        return HttpService:JSONEncode(serverData)
+        return HttpService:JSONEncode(cloudData)
     end)
     
     if not success then
-        debugLog("Erro ao converter dados para JSON: " .. tostring(result), true)
+        cloudLog("Erro ao preparar dados: " .. tostring(result), "ERROR")
         return false
     end
     
     jsonData = result
     
-    -- Tentar enviar para o sistema híbrido Python
-    local hybridMethods = {}
+    -- Métodos de envio para a nuvem
+    local cloudMethods = {
+        function()
+            if http_request then
+                return http_request({
+                    Url = getgenv().ZENIKAZE_CLOUD_CONFIG.cloudServer,
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["User-Agent"] = "Zenikaze-Cloud/" .. getgenv().ZENIKAZE_CLOUD_CONFIG.version,
+                        ["X-Client-ID"] = cache.sessionId,
+                        ["X-Room-ID"] = getgenv().ZENIKAZE_CLOUD_CONFIG.roomId
+                    },
+                    Body = jsonData,
+                    Timeout = 20
+                })
+            end
+            return false
+        end,
+        function()
+            if request then
+                return request({
+                    Url = getgenv().ZENIKAZE_CLOUD_CONFIG.cloudServer,
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["User-Agent"] = "Zenikaze-Cloud"
+                    },
+                    Body = jsonData,
+                    Timeout = 20
+                })
+            end
+            return false
+        end
+    }
     
-    -- Método 1: http_request
-    if http_request then
-        table.insert(hybridMethods, function()
-            return http_request({
-                Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["X-Source"] = "zenikaze-lua-hybrid",
-                    ["User-Agent"] = "Zenikaze-Hybrid/1.0"
-                },
-                Body = jsonData
-            })
-        end)
-    end
-    
-    -- Método 2: request
-    if request then
-        table.insert(hybridMethods, function()
-            return request({
-                Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["X-Source"] = "zenikaze-lua-hybrid"
-                },
-                Body = jsonData
-            })
-        end)
-    end
-    
-    -- Método 3: syn.request
-    if syn and syn.request then
-        table.insert(hybridMethods, function()
-            return syn.request({
-                Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint,
-                Method = "POST",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["X-Source"] = "zenikaze-lua-hybrid"
-                },
-                Body = jsonData
-            })
-        end)
-    end
-    
-    local hybridSuccess = false
-    
-    for i = 1, #hybridMethods do
-        local method = hybridMethods[i]
+    -- Tentar enviar
+    for methodIndex, method in ipairs(cloudMethods) do
         local success, response = pcall(method)
         
-        if success and response then
-            hybridSuccess = true
-            cache.sessionData.hybridConnections = cache.sessionData.hybridConnections + 1
-            cache.hybridSystemStatus = "CONNECTED"
+        if success and response and (response.StatusCode == 200 or response.Success) then
+            cache.serversSent = cache.serversSent + 1
+            cache.lastServerSent = jobId
+            cache.connectionStatus = "CONNECTED"
             
-            debugLog("Dados enviados para Sistema Híbrido Python!")
+            cloudLog(string.format("☁️ DADOS ENVIADOS! (%d secrets)", #foundSecrets), "CLOUD")
             
-            -- Processar resposta do sistema híbrido
+            -- Processar resposta da nuvem
             if response.Body then
                 local responseSuccess, responseData = pcall(function()
                     return HttpService:JSONDecode(response.Body)
                 end)
                 
                 if responseSuccess and responseData then
-                    debugLog(string.format("Sistema Híbrido resposta: %s", responseData.message or "OK"))
-                    
-                    if responseData.is_chilli then
-                        debugLog("🔥 Sistema detectou CHILLI JOIN! 🔥")
-                        debugLog("O Chilli Joiner será aberto automaticamente!")
-                        cache.sessionData.commandsReceived = cache.sessionData.commandsReceived + 1
-                    end
-                    
-                    if responseData.commands_executed then
-                        debugLog("Comandos externos executados no sistema!")
-                        cache.sessionData.commandsReceived = cache.sessionData.commandsReceived + 1
-                    end
-                    
-                    if responseData.highest_value then
-                        debugLog(string.format("Maior valor processado: %s", getFormattedValueFromNumber(responseData.highest_value)))
-                    end
-                    
-                    if responseData.secrets_approved and responseData.secrets_total then
-                        debugLog(string.format("Filtros aplicados: %d/%d secrets aprovados", responseData.secrets_approved, responseData.secrets_total))
-                    end
-                    
-                    if responseData.best_secret then
-                        local best = responseData.best_secret
-                        debugLog(string.format("Melhor secret: %s [%s] - %s", best.name or "Unknown", best.rarity or "Unknown", best.formattedValue or "Unknown"))
+                    if responseData.status == "success" then
+                        local approved = responseData.secrets_approved or 0
+                        local total = responseData.secrets_total or 0
+                        cloudLog(string.format("✅ Processado na nuvem: %d/%d secrets aprovados", approved, total), "SUCCESS")
+                        
+                        if responseData.room_id then
+                            cache.roomConnected = responseData.room_id
+                            cloudLog(string.format("🏠 Sala: %s", responseData.room_id), "INFO")
+                        end
+                        
+                        if responseData.is_chilli then
+                            cloudLog("🔥 CHILLI JOIN DETECTADO NA NUVEM! 🔥", "SUCCESS")
+                        end
+                        
+                        if responseData.auto_join_available then
+                            cloudLog("🎯 Auto-join disponível para admins conectados!", "SUCCESS")
+                        end
+                        
+                        if responseData.admins_notified and responseData.admins_notified > 0 then
+                            cloudLog(string.format("👥 %d admin(s) notificado(s)", responseData.admins_notified), "SUCCESS")
+                        end
+                        
+                        if responseData.highest_value and responseData.highest_value > 0 then
+                            cloudLog(string.format("💎 Maior valor: %s", formatValue(responseData.highest_value)), "SUCCESS")
+                        end
+                        
+                    elseif responseData.status == "filtered" then
+                        cloudLog("⚠️ Servidor rejeitado: não passou nos filtros da nuvem", "WARNING")
+                    elseif responseData.status == "no_secrets" then
+                        cloudLog("ℹ️ Nuvem: nenhum secret encontrado", "INFO")
+                    else
+                        cloudLog("Resposta da nuvem: " .. (responseData.message or "Processado"), "INFO")
                     end
                 end
             end
-            break
+            
+            return true
         end
     end
     
-    if not hybridSuccess then
-        cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
-        cache.hybridSystemStatus = "OFFLINE"
-        debugLog("Falha ao conectar com Sistema Híbrido Python - Sistema offline?", true)
-    end
-    
-    return hybridSuccess
+    cache.connectionStatus = "OFFLINE"
+    cloudLog("❌ Falha ao enviar para nuvem - Servidor offline?", "ERROR")
+    return false
 end
 
--- Scanner de secrets (CORRIGIDO)
-local function checkForHighValueBrainhots()
+-- Scanner principal (otimizado para performance)
+local function scanForSecrets()
     local found = {}
     local totalScanned = 0
     local totalSecrets = 0
@@ -375,19 +439,19 @@ local function checkForHighValueBrainhots()
         local plotsFolder = workspace:FindFirstChild("Plots")
         
         if not plotsFolder then 
-            debugLog("Pasta 'Plots' não encontrada no Workspace")
+            cloudLog("Pasta 'Plots' não encontrada", "WARNING")
             return 
         end
         
         local plots = plotsFolder:GetChildren()
-        debugLog(string.format("Iniciando scan em %d plots...", #plots))
+        cloudLog(string.format("🔍 Escaneando %d plots...", #plots), "INFO")
         
         for plotIndex = 1, #plots do
             local plot = plots[plotIndex]
             local isMyPlot = false
             
-            -- Verificar se é meu plot (CORRIGIDO)
-            local plotSignSuccess = pcall(function()
+            -- Verificar se é meu plot (otimizado)
+            pcall(function()
                 local plotSign = plot:FindFirstChild("PlotSign")
                 if plotSign then
                     local surfaceGui = plotSign:FindFirstChild("SurfaceGui")
@@ -395,9 +459,8 @@ local function checkForHighValueBrainhots()
                         local frame = surfaceGui:FindFirstChild("Frame")
                         if frame then
                             local textLabel = frame:FindFirstChild("TextLabel")
-                            if textLabel and textLabel.Text and string.find(textLabel.Text, player.Name) then
+                            if textLabel and textLabel.Text and textLabel.Text:find(player.Name) then
                                 isMyPlot = true
-                                debugLog(string.format("Pulando meu plot: %s", plot.Name))
                             end
                         end
                     end
@@ -405,11 +468,12 @@ local function checkForHighValueBrainhots()
             end)
             
             if not isMyPlot then
-                debugLog(string.format("Escaneando plot %d: %s", plotIndex, plot.Name))
-                
                 local descendants = plot:GetDescendants()
                 
-                for i = 1, #descendants do
+                -- Limitar busca para performance (máximo 200 objetos por plot)
+                local maxSearch = math.min(#descendants, 200)
+                
+                for i = 1, maxSearch do
                     local descendant = descendants[i]
                     
                     if (descendant.ClassName == "Part" or descendant.ClassName == "MeshPart") and descendant.Parent then
@@ -421,13 +485,11 @@ local function checkForHighValueBrainhots()
                             totalSecrets = totalSecrets + 1
                             local displayName = getDisplayName(descendant)
                             local brainrotValue = getBrainrotValue(descendant)
-                            local formattedValue = getFormattedValue(descendant)
+                            local formattedValue = formatValue(brainrotValue)
                             
-                            debugLog(string.format("Secret encontrado: %s [%s] - %s (%d)", displayName, rarity, formattedValue, brainrotValue))
-                            
-                            -- Verificar se passa no filtro de valor
-                            if isHighValueBrainrot(descendant, rarity) then
-                                local brainrotData = {
+                            -- Aplicar filtro local mínimo
+                            if brainrotValue >= getgenv().ZENIKAZE_CLOUD_CONFIG.minSecretValue and rarity == "Secret" then
+                                local secretData = {
                                     name = displayName,
                                     rarity = rarity,
                                     value = formattedValue,
@@ -435,11 +497,9 @@ local function checkForHighValueBrainhots()
                                     object = descendant
                                 }
                                 
-                                table.insert(found, brainrotData)
+                                table.insert(found, secretData)
                                 
-                                debugLog(string.format(">>> APROVADO: %s [%s] - %s", displayName, rarity, formattedValue), false)
-                            else
-                                debugLog(string.format(">>> Rejeitado: %s [%s] - %s (abaixo do minimo)", displayName, rarity, formattedValue))
+                                cloudLog(string.format("💎 Secret: %s [%s] - %s", displayName, rarity, formattedValue), "SERVER")
                             end
                         end
                     end
@@ -449,234 +509,140 @@ local function checkForHighValueBrainhots()
     end)
     
     if not success then
-        debugLog("Erro durante o scan: " .. tostring(error_msg), true)
+        cloudLog("Erro durante scan: " .. tostring(error_msg), "ERROR")
     end
     
-    cache.sessionData.secretsFound = cache.sessionData.secretsFound + #found
+    cache.secretsFound = cache.secretsFound + #found
     
-    debugLog(string.format("=== RESULTADO DO SCAN ==="))
-    debugLog(string.format("Objetos escaneados: %d", totalScanned))
-    debugLog(string.format("Secrets totais: %d", totalSecrets))
-    debugLog(string.format("Secrets aprovados: %d", #found))
-    debugLog(string.format("Valor minimo: %s", getFormattedValueFromNumber(getgenv().ZENIKAZE_CONFIG.minSecretValue)))
-    
-    if #found > 0 then
-        debugLog("SECRETS APROVADOS:")
-        for i = 1, #found do
-            local brainrot = found[i]
-            debugLog(string.format("  %d. %s [%s] - %s", i, brainrot.name, brainrot.rarity, brainrot.value))
-        end
-    end
+    cloudLog(string.format("📊 Scan: %d objetos, %d secrets totais, %d aprovados", totalScanned, totalSecrets, #found), "INFO")
     
     return found
 end
 
--- Detectar mudança de servidor
-if cache.serverJobId ~= game.JobId then
-    cache.serverJobId = game.JobId
-    cache.lastBrainhots = {}
-    cache.lastNotificationTime = 0
-    cache.sessionData.serversScanned = cache.sessionData.serversScanned + 1
-    cache.hybridSystemStatus = "UNKNOWN"
-    debugLog("Novo servidor detectado - Sistema resetado")
-end
-
--- Função para gerar ID único do brainrot
-local function getBrainrotId(brainrot)
-    return brainrot.name .. "|" .. brainrot.rarity .. "|" .. (brainrot.value or "")
-end
-
--- Função para verificar mudanças
-local function brainhotsChanged(currentBrainhots)
-    if #currentBrainhots ~= #cache.lastBrainhots then
-        return true
-    end
-    
-    local currentIds = {}
-    for _, brainrot in pairs(currentBrainhots) do
-        currentIds[getBrainrotId(brainrot)] = true
-    end
-    
-    local lastIds = {}
-    for _, brainrot in pairs(cache.lastBrainhots) do
-        lastIds[getBrainrotId(brainrot)] = true
-    end
-    
-    for id, _ in pairs(currentIds) do
-        if not lastIds[id] then
-            return true
-        end
-    end
-    
-    for id, _ in pairs(lastIds) do
-        if not currentIds[id] then
-            return true
-        end
-    end
-    
-    return false
-end
-
--- Função para exibir estatísticas
-local function printStats()
-    local stats = cache.sessionData
-    debugLog("=== ESTATISTICAS DA SESSAO ===")
-    debugLog(string.format("Servidores escaneados: %d", stats.serversScanned))
-    debugLog(string.format("Secrets encontrados: %d", stats.secretsFound))
-    debugLog(string.format("Conexoes hibridas: %d (Falhas: %d)", stats.hybridConnections, stats.failedConnections))
-    debugLog(string.format("Comandos recebidos: %d", stats.commandsReceived))
-    debugLog(string.format("Status Sistema: %s", cache.hybridSystemStatus))
-end
-
--- SISTEMA PRINCIPAL DE SCAN E NOTIFICAÇÃO
+-- Loop principal de scanning
 local lastScanTime = 0
 local isScanning = false
 
-local function mainScanLoop()
+local function mainCloudLoop()
     if isScanning then return end
     
     local currentTime = tick()
     
     -- Cooldown entre scans
-    if currentTime - lastScanTime < getgenv().ZENIKAZE_CONFIG.scanInterval then
+    if currentTime - lastScanTime < getgenv().ZENIKAZE_CLOUD_CONFIG.scanInterval then
         return
     end
     
     isScanning = true
     lastScanTime = currentTime
+    cache.lastScan = currentTime
+    cache.totalScans = cache.totalScans + 1
     
     local success = pcall(function()
-        local foundBrainhots = checkForHighValueBrainhots()
+        cloudLog("🔍 Iniciando scan automático...", "INFO")
         
-        -- Verificar se houve mudanças ou se é a primeira verificação
-        if brainhotsChanged(foundBrainhots) or #cache.lastBrainhots == 0 then
-            cache.lastBrainhots = foundBrainhots
+        local foundSecrets = scanForSecrets()
+        
+        if #foundSecrets > 0 then
+            cloudLog(string.format("🎯 SERVIDOR ENCONTRADO! %d secrets detectados", #foundSecrets), "SUCCESS")
             
-            if #foundBrainhots > 0 then
-                debugLog(string.format("SERVIDOR COM SECRETS! Encontrados: %d", #foundBrainhots))
-                
-                -- Enviar para sistema híbrido Python
-                local hybridSent = sendToHybridSystem(foundBrainhots, game.JobId)
-                
-                -- Log dos secrets encontrados
-                for i, brainrot in ipairs(foundBrainhots) do
-                    debugLog(string.format("Secret %d: %s [%s] - %s", i, brainrot.name, brainrot.rarity, brainrot.value))
-                end
-                
-                -- Atualizar timestamp da última notificação
-                cache.lastNotificationTime = currentTime
-                
-                if hybridSent then
-                    debugLog("Sistema Híbrido processou os dados - AutoJoin ativo!")
-                else
-                    debugLog("Falha na comunicação com Sistema Híbrido", true)
-                end
+            -- Enviar para a nuvem
+            local sent = sendToCloud(foundSecrets, game.JobId)
+            
+            if sent then
+                cloudLog("☁️ Dados enviados para a nuvem com sucesso!", "CLOUD")
             else
-                -- Server limpo
-                if cache.hybridSystemStatus ~= "OFFLINE" then
-                    debugLog("Servidor limpo - nenhum secret 1M+ encontrado")
-                end
+                cloudLog("❌ Falha ao enviar dados para a nuvem", "ERROR")
             end
+        else
+            cloudLog("😐 Servidor limpo - nenhum secret encontrado", "INFO")
         end
     end)
     
     if not success then
-        debugLog("Erro durante scan principal", true)
+        cloudLog("Erro durante scan principal", "ERROR")
     end
     
     isScanning = false
 end
 
--- INICIALIZAÇÃO DO SISTEMA
-debugLog("=== ZENIKAZE HYBRID AUTOJOINER INICIADO ===")
-debugLog(string.format("Endpoint Python: %s", getgenv().ZENIKAZE_CONFIG.pythonEndpoint))
-debugLog(string.format("Valor minimo: %.1fM+", getgenv().ZENIKAZE_CONFIG.minSecretValue / 1000000))
-debugLog(string.format("Intervalo de scan: %ds", getgenv().ZENIKAZE_CONFIG.scanInterval))
-debugLog(string.format("AutoJoin: %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVO" or "INATIVO"))
-
--- Testar conexão com sistema híbrido
-spawn(function()
-    wait(2) -- Aguardar inicialização
-    
-    local testMethods = {
-        function() 
-            if http_request then
-                return http_request({
-                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint .. "/status",
-                    Method = "GET",
-                    Headers = {["X-Source"] = "zenikaze-lua-test"}
-                })
-            end
-            return false
-        end,
-        function()
-            if request then
-                return request({
-                    Url = getgenv().ZENIKAZE_CONFIG.pythonEndpoint .. "/status",
-                    Method = "GET"
-                })
-            end
-            return false
-        end
-    }
-    
-    local connectionOK = false
-    for _, method in ipairs(testMethods) do
-        local success, response = pcall(method)
-        if success and response and response.StatusCode == 200 then
-            connectionOK = true
-            cache.hybridSystemStatus = "CONNECTED"
-            debugLog("Conexão com Sistema Híbrido Python OK!")
-            break
-        end
-    end
-    
-    if not connectionOK then
-        cache.hybridSystemStatus = "OFFLINE"
-        debugLog("Sistema Híbrido Python offline - Execute o script Python primeiro!", true)
-        debugLog("Execute: python zenikaze_autojoiner.py", true)
-    end
-end)
-
--- LOOP PRINCIPAL
-local connection = RunService.Heartbeat:Connect(mainScanLoop)
-
--- COMANDOS DE CHAT
+-- Comandos de chat
 local function onPlayerChatted(message)
     local msg = message:lower()
     
-    if msg == "/stats" then
-        printStats()
-    elseif msg == "/toggle" then
-        getgenv().ZENIKAZE_CONFIG.autoJoinEnabled = not getgenv().ZENIKAZE_CONFIG.autoJoinEnabled
-        debugLog(string.format("AutoJoin %s", getgenv().ZENIKAZE_CONFIG.autoJoinEnabled and "ATIVADO" or "DESATIVADO"))
-    elseif msg == "/debug" then
-        getgenv().ZENIKAZE_CONFIG.debugMode = not getgenv().ZENIKAZE_CONFIG.debugMode
-        debugLog(string.format("Debug mode %s", getgenv().ZENIKAZE_CONFIG.debugMode and "ATIVADO" or "DESATIVADO"))
+    if msg == "/status" or msg == "/stats" then
+        local uptime = tick() - cache.sessionStart
+        cloudLog("=== STATUS DO CLIENTE CLOUD ===", "INFO")
+        cloudLog(string.format("Uptime: %.0fs", uptime), "INFO")
+        cloudLog(string.format("Sessão ID: %s", cache.sessionId), "INFO") 
+        cloudLog(string.format("Sala conectada: %s", cache.roomConnected), "INFO")
+        cloudLog(string.format("Total scans: %d", cache.totalScans), "INFO")
+        cloudLog(string.format("Servidores enviados: %d", cache.serversSent), "INFO")
+        cloudLog(string.format("Secrets encontrados: %d", cache.secretsFound), "INFO")
+        cloudLog(string.format("Status conexão: %s", cache.connectionStatus), "INFO")
+        cloudLog(string.format("Servidor cloud: %s", getgenv().ZENIKAZE_CLOUD_CONFIG.cloudServer), "INFO")
+        cloudLog(string.format("Último server: %s", cache.lastServerSent), "INFO")
     elseif msg == "/scan" then
         lastScanTime = 0 -- Forçar scan imediato
-        debugLog("Scan forçado!")
+        cloudLog("🔍 Scan forçado iniciado!", "INFO")
+    elseif msg == "/test" then
+        cloudLog("🔌 Testando conexão com nuvem...", "INFO")
+        local connected, endpoint = testCloudConnection()
+        if connected then
+            cloudLog("✅ Conexão OK! Endpoint: " .. (endpoint or "N/A"), "SUCCESS")
+        else
+            cloudLog("❌ Servidor na nuvem offline ou inacessível", "ERROR")
+        end
+    elseif msg == "/room" then
+        local newRoom = "vip" -- Exemplo de troca de sala
+        getgenv().ZENIKAZE_CLOUD_CONFIG.roomId = newRoom
+        cloudLog("🏠 Sala alterada para: " .. newRoom, "SUCCESS")
     elseif msg == "/help" then
-        debugLog("=== COMANDOS DISPONIVEIS ===")
-        debugLog("/stats - Estatisticas da sessao")
-        debugLog("/toggle - Liga/desliga AutoJoin")
-        debugLog("/debug - Liga/desliga debug mode")
-        debugLog("/scan - Força scan imediato")
-        debugLog("/help - Esta ajuda")
+        cloudLog("=== COMANDOS DISPONÍVEIS ===", "INFO")
+        cloudLog("/status - Estatísticas do cliente", "INFO")
+        cloudLog("/scan - Força scan imediato", "INFO")
+        cloudLog("/test - Testa conexão com nuvem", "INFO")
+        cloudLog("/room - Alterna sala (exemplo)", "INFO")
+        cloudLog("/help - Esta ajuda", "INFO")
     end
 end
 
+-- INICIALIZAÇÃO DO CLIENTE CLOUD
+cloudLog("=== ZENIKAZE CLOUD CLIENT INICIADO ===", "SUCCESS")
+cloudLog(string.format("👤 Cliente: %s", getgenv().ZENIKAZE_CLOUD_CONFIG.clientName), "INFO")
+cloudLog(string.format("🌐 Servidor na nuvem: %s", getgenv().ZENIKAZE_CLOUD_CONFIG.cloudServer), "CLOUD")
+cloudLog(string.format("🏠 Sala: %s", getgenv().ZENIKAZE_CLOUD_CONFIG.roomId), "INFO")
+cloudLog(string.format("⏱️ Intervalo: %ds", getgenv().ZENIKAZE_CLOUD_CONFIG.scanInterval), "INFO")
+cloudLog(string.format("💎 Mínimo local: %.1fM+", getgenv().ZENIKAZE_CLOUD_CONFIG.minSecretValue / 1000000), "INFO")
+cloudLog(string.format("🆔 Sessão: %s", cache.sessionId), "INFO")
+
+-- Teste de conexão inicial
+spawn(function()
+    wait(3) -- Aguardar inicialização
+    
+    cloudLog("🔌 Testando conexão inicial com nuvem...", "INFO")
+    local connected, endpoint = testCloudConnection()
+    if connected then
+        cloudLog("✅ Conectado à nuvem! Endpoint: " .. (endpoint or "N/A"), "SUCCESS")
+        cloudLog("☁️ URL PERMANENTE - nunca precisa trocar!", "CLOUD")
+    else
+        cloudLog("⚠️ Nuvem temporariamente offline - tentará reconectar automaticamente", "WARNING")
+    end
+end)
+
+-- Conectar eventos
+local connection = RunService.Heartbeat:Connect(mainCloudLoop)
 player.Chatted:Connect(onPlayerChatted)
 
--- CLEANUP ao sair
+-- Cleanup ao sair
 game.Players.PlayerRemoving:Connect(function(plr)
     if plr == player then
         if connection then
             connection:Disconnect()
         end
-        debugLog("Sistema Zenikaze desconectado")
+        cloudLog("Cliente Cloud desconectado", "INFO")
     end
 end)
 
-debugLog("Zenikaze Hub pronto! Digite /help no chat para comandos")
-debugLog("Aguardando secrets 1M+...")
+cloudLog("🚀 Cliente pronto! Digite /help para comandos", "SUCCESS")
+cloudLog("☁️ Enviando dados para servidor global permanente...", "CLOUD")
