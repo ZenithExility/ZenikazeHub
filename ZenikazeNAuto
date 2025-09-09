@@ -1,0 +1,106 @@
+-- Zenikaze Auto Joiner ⚡ (Sender / Publisher)
+-- Detecta valores e envia JobId + info para o Firebase
+-- NÃO printa nada, só envia
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- ===== FIREBASE CONFIG =====
+local BASE = "https://zenikaze-auto-joiner-default-rtdb.firebaseio.com"
+local PATH = "/zenikaze/latest/" .. tostring(game.PlaceId) .. ".json"
+
+-- ===== ESTADO =====
+local lastSnapshot
+
+-- ===== FIREBASE =====
+local function doRequest(method, url, bodyTbl)
+    local headers = { ["Content-Type"] = "application/json" }
+    local body = bodyTbl and HttpService:JSONEncode(bodyTbl) or nil
+    local ok, res = pcall(function()
+        return HttpService:RequestAsync({
+            Url = url,
+            Method = method,
+            Headers = headers,
+            Body = body
+        })
+    end)
+    return ok and res and res.Success
+end
+
+local function fb_put(tbl)
+    return doRequest("PUT", BASE .. PATH, tbl)
+end
+
+-- ===== HELPERS =====
+local function toNumber(token)
+    if type(token) ~= "string" then return nil end
+    local raw = token:gsub(",", ""):gsub("%s+/+%s*[sS][eE]?[cC]", ""):gsub("%s+", "")
+    local num, suf = raw:match("^([%d%.]+)%s*([kKmMbB]?)$")
+    if not num then return nil end
+    local n = tonumber(num); if not n then return nil end
+    if suf == "k" or suf == "K" then n = n * 1e3
+    elseif suf == "m" or suf == "M" then n = n * 1e6
+    elseif suf == "b" or suf == "B" then n = n * 1e9 end
+    return n
+end
+
+local function extractValueFromGui(root, minVal, maxVal)
+    local best
+    for _, gui in ipairs(root:GetDescendants()) do
+        if gui:IsA("BillboardGui") or gui:IsA("SurfaceGui") then
+            for _, tl in ipairs(gui:GetDescendants()) do
+                if tl:IsA("TextLabel") and tl.Text and tl.Text ~= "" then
+                    local n = toNumber(tl.Text)
+                    if n and n >= minVal and n <= maxVal then
+                        if not best or n > best.numeric then
+                            best = { numeric = n, label = tl.Text, name = root.Name }
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+local function scanForValue(minVal, maxVal)
+    for _, root in ipairs(Workspace:GetChildren()) do
+        if root:IsA("Model") or root:IsA("Folder") then
+            local val = extractValueFromGui(root, minVal, maxVal)
+            if val then return val end
+        end
+    end
+    return nil
+end
+
+-- ===== LOOP DE ENVIO =====
+task.spawn(function()
+    while true do
+        local ok, hit = pcall(function()
+            return scanForValue(1e6, 1e10) -- detecta entre 1M e 10B
+        end)
+
+        if ok and hit then
+            local payload = {
+                jobId     = game.JobId,
+                placeId   = game.PlaceId,
+                value     = hit.numeric,
+                label     = hit.label,
+                name      = hit.name,
+                postedAt  = os.time(),
+                fromUserId= LocalPlayer and LocalPlayer.UserId or 0
+            }
+            local snap = payload.jobId .. "|" .. payload.value
+            if snap ~= lastSnapshot then
+                fb_put(payload)
+                lastSnapshot = snap
+            end
+            task.wait(5)
+        else
+            task.wait(10)
+        end
+    end
+end)
