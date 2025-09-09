@@ -1,6 +1,6 @@
--- Zenikaze Auto Joiner ⚡ (Sender / Publisher)
--- Detecta valores e envia JobId + info para o Firebase
--- NÃO printa nada, só envia
+-- Zenikaze Auto Joiner ⚡ — Sender/Publisher (Corrigido)
+-- Detecta valores entre Min/Max e envia JobId para o Firebase
+-- Usa apenas HttpService:RequestAsync para garantir envio
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -8,30 +8,25 @@ local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
 
+-- ===== RANGE (default) =====
+local MIN = (getgenv().ZK_MinValue and tonumber(getgenv().ZK_MinValue) or 10*1e6)    -- 10M
+local MAX = (getgenv().ZK_MaxValue and tonumber(getgenv().ZK_MaxValue) or 1000*1e6)  -- 1000M
+
 -- ===== FIREBASE CONFIG =====
 local BASE = "https://zenikaze-auto-joiner-default-rtdb.firebaseio.com"
 local PATH = "/zenikaze/latest/" .. tostring(game.PlaceId) .. ".json"
 
--- ===== ESTADO =====
-local lastSnapshot
-
--- ===== FIREBASE =====
-local function doRequest(method, url, bodyTbl)
-    local headers = { ["Content-Type"] = "application/json" }
-    local body = bodyTbl and HttpService:JSONEncode(bodyTbl) or nil
+local function fb_put(tbl)
+    local json = HttpService:JSONEncode(tbl)
     local ok, res = pcall(function()
         return HttpService:RequestAsync({
-            Url = url,
-            Method = method,
-            Headers = headers,
-            Body = body
+            Url = BASE .. PATH,
+            Method = "PUT",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = json
         })
     end)
     return ok and res and res.Success
-end
-
-local function fb_put(tbl)
-    return doRequest("PUT", BASE .. PATH, tbl)
 end
 
 -- ===== HELPERS =====
@@ -76,13 +71,13 @@ local function scanForValue(minVal, maxVal)
     return nil
 end
 
--- ===== LOOP DE ENVIO =====
+-- ===== LOOP =====
+local lastSnapshot
 task.spawn(function()
     while true do
         local ok, hit = pcall(function()
-            return scanForValue(1e6, 1e10) -- detecta entre 1M e 10B
+            return scanForValue(MIN, MAX)
         end)
-
         if ok and hit then
             local payload = {
                 jobId     = game.JobId,
@@ -93,14 +88,14 @@ task.spawn(function()
                 postedAt  = os.time(),
                 fromUserId= LocalPlayer and LocalPlayer.UserId or 0
             }
-            local snap = payload.jobId .. "|" .. payload.value
+            local snap = tostring(payload.jobId) .. "|" .. tostring(payload.value)
             if snap ~= lastSnapshot then
-                fb_put(payload)
+                fb_put(payload) -- PUT direto no Firebase
                 lastSnapshot = snap
             end
             task.wait(5)
         else
-            task.wait(10)
+            task.wait(8)
         end
     end
 end)
