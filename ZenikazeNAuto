@@ -1,5 +1,5 @@
--- ZENIKAZE HU⚡️ CLOUD NOTIFIER - SECRETS 1M+ (FIX)
--- Sem GUI / compatível com executores que não têm DateTime:ToIso* no cliente
+-- ZENIKAZE HU⚡️ CLOUD NOTIFIER - SECRETS 1M+ (CORRIGIDO)
+-- Compatible com Auto Joiner - Envia dados no formato correto
 
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
@@ -10,20 +10,20 @@ local player = Players.LocalPlayer
 -- CONFIG
 -- =========================
 getgenv().ZENIKAZE_CONFIG = {
-    firebaseUrl = "https://zenikaze-auto-joiner-default-rtdb.firebaseio.com/",
-
+    firebaseUrl = "https://zenikaze-auto-joiner-default-rtdb.firebaseio.com",
+    
     autoJoinEnabled = true,
     minSecretValue = 1000000,     -- 1M+
     scanInterval   = 15,          -- seg
     cooldownTime   = 60,          -- seg entre envios iguais
-
+    
     debugMode = false,
-
+    
     -- Filtros de servidor
     maxPlayersToJoin   = 7,       -- rejeita 8+
-    avoidPrivateServers = true,   -- no cliente não checamos PrivateServerId (sem spam)
+    avoidPrivateServers = true,
     onlyPublicServers   = true,
-
+    
     userId = ""
 }
 
@@ -56,11 +56,6 @@ local function logDebug(msg)
     end
 end
 
-local function isoNow()
-    -- ISO-8601 UTC compatível com todos executores
-    return os.date("!%Y-%m-%dT%H:%M:%SZ")
-end
-
 local function generateUserId()
     if getgenv().ZENIKAZE_CONFIG.userId == "" then
         local chars = "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -70,32 +65,14 @@ local function generateUserId()
             table.insert(id, string.sub(chars, idx, idx))
         end
         getgenv().ZENIKAZE_CONFIG.userId = table.concat(id)
+        print("[ZENIKAZE] Generated User ID: " .. getgenv().ZENIKAZE_CONFIG.userId)
     end
     return getgenv().ZENIKAZE_CONFIG.userId
-end
-
--- No cliente NÃO checamos PrivateServerId para evitar spam de aviso
-local function isPrivateServer()
-    if RunService:IsServer() then
-        -- Se algum dia for usado no servidor, pode checar de fato aqui.
-        return false
-    end
-    return false
 end
 
 local function isServerCrowded()
     local currentPlayers = #Players:GetPlayers()
     return currentPlayers >= 8 or currentPlayers > getgenv().ZENIKAZE_CONFIG.maxPlayersToJoin
-end
-
-local function buildJoinLink(placeId, jobId)
-    if getgenv().ZENIKAZE_CONFIG.avoidPrivateServers and isPrivateServer() then
-        return nil
-    end
-    if isServerCrowded() then
-        return nil
-    end
-    return string.format("https://www.roblox.com/games/%d/Brainrot-Simulator?gameInstanceId=%s", placeId, jobId)
 end
 
 -- =========================
@@ -120,7 +97,7 @@ local function getBrainrotValue(object)
                     if n then return n * 1e6 end
                 end
 
-                local digits = t:match("([%d]+)/?[sS]?e?c?") -- >= 7 dígitos => 1M+
+                local digits = t:match("([%d]+)/?[sS]?e?c?")
                 if digits and #digits >= 7 then
                     local n = tonumber(digits)
                     if n and n >= 1e6 then return n end
@@ -190,63 +167,77 @@ end
 -- =========================
 -- HTTP (EXECUTOR FALLBACKS)
 -- =========================
-local function getHttp()
-    return (http_request)
+local function raw_request(opts)
+    local req = (http_request)
         or (syn and syn.request)
         or request
         or (fluxus and fluxus.request)
         or (krnl_request)
         or (http and http.request)
         or nil
+
+    if req then
+        local ok, res = pcall(function() return req(opts) end)
+        if ok and res and tonumber(res.StatusCode or 0) >= 200 and tonumber(res.StatusCode or 0) < 300 then
+            return true, res.Body
+        end
+    end
+
+    -- fallback HttpService
+    local ok2, res2 = pcall(function()
+        return HttpService:RequestAsync({
+            Url = opts.Url,
+            Method = opts.Method,
+            Headers = opts.Headers,
+            Body = opts.Body
+        })
+    end)
+    if ok2 and res2 and res2.Success then
+        return true, res2.Body
+    end
+    return false, nil
 end
 
 -- =========================
--- ENVIO PARA FIREBASE
+-- ENVIO PARA FIREBASE (FORMATO COMPATÍVEL)
 -- =========================
 local function sendToCloud(foundBrainhots, jobId)
-    if getgenv().ZENIKAZE_CONFIG.avoidPrivateServers and isPrivateServer() then
+    if getgenv().ZENIKAZE_CONFIG.avoidPrivateServers and game.PrivateServerId ~= "" then
+        logDebug("Avoiding private server")
         return false
     end
     if isServerCrowded() then
+        logDebug("Server is crowded")
         return false
     end
     if #foundBrainhots == 0 then
+        logDebug("No brainhots to send")
         return false
     end
 
     local userId = generateUserId()
-    local tsIso = isoNow()
+    local timestamp = os.time()
 
-    local joinLink = nil
-    if getgenv().ZENIKAZE_CONFIG.onlyPublicServers then
-        joinLink = buildJoinLink(game.PlaceId, jobId)
-    end
-    if not joinLink then
-        return false
-    end
-
+    -- Estrutura de dados COMPATÍVEL com Auto Joiner
     local data = {
-        userId = userId,
-        timestamp = tsIso,
         server = {
             jobId = jobId,
             placeId = game.PlaceId,
             playerCount = #Players:GetPlayers(),
             maxPlayers = Players.MaxPlayers,
-            joinLink = joinLink,
-            isPrivate = false, -- não checado no cliente
+            isPrivate = game.PrivateServerId ~= "",
             isCrowded = isServerCrowded()
         },
         secrets = {},
         statistics = {
             totalSecrets = #foundBrainhots,
-            highestValue = 0,
-            sessionData = cache.sessionData
+            highestValue = 0
         },
-        client_source = "roblox_lua_script",
-        status = "active"
+        timestamp = timestamp,
+        userId = userId
     }
 
+    -- Preenche os secrets
     for _, info in ipairs(foundBrainhots) do
         local raw = getBrainrotValue(info.object) or 0
         if raw > data.statistics.highestValue then
@@ -255,58 +246,36 @@ local function sendToCloud(foundBrainhots, jobId)
         table.insert(data.secrets, {
             name = info.name,
             rarity = info.rarity,
-            value = info.value,
             rawValue = raw,
             formattedValue = getFormattedValue(info.object)
         })
     end
 
     local jsonData = HttpService:JSONEncode(data)
+    
+    -- URL no formato que o Auto Joiner espera
+    local url = string.format("%s/zenikaze/servers/%s/%s.json", 
+        getgenv().ZENIKAZE_CONFIG.firebaseUrl, userId, tostring(timestamp))
+    
+    print("[ZENIKAZE] Sending data to: " .. url)
+    print("[ZENIKAZE] Data preview: " .. jsonData:sub(1, 200) .. "...")
 
-    local base = getgenv().ZENIKAZE_CONFIG.firebaseUrl
-    local serverUrl = string.format("%s/zenikaze/servers/%s/%s.json", base, userId, tostring(os.time()))
-    local userUrl   = string.format("%s/zenikaze/users/%s.json",   base, userId)
+    local success, response = raw_request({
+        Url = url,
+        Method = "PUT",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = jsonData
+    })
 
-    local userData = {
-        lastActive   = tsIso,
-        totalServers = cache.sessionData.serversScanned,
-        totalSecrets = cache.sessionData.secretsFound,
-        highestValue = data.statistics.highestValue,
-        playerName   = player and player.Name or "Unknown"
-    }
-
-    local http = getHttp()
-    if not http then
-        -- Sem HTTP raw no executor
-        cache.sessionData.failedConnections += 1
-        return false
-    end
-
-    local ok1, resp1 = pcall(function()
-        return http({
-            Url = serverUrl,
-            Method = "PUT",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = jsonData
-        })
-    end)
-
-    local ok2, resp2 = pcall(function()
-        return http({
-            Url = userUrl,
-            Method = "PATCH",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode(userData)
-        })
-    end)
-
-    local success = ok1 and resp1 and ok2 and resp2
     if success then
         cache.sessionData.cloudConnections = cache.sessionData.cloudConnections + 1
+        print("[ZENIKAZE] ✅ Data sent successfully! Secrets: " .. #foundBrainhots .. " | Highest: " .. formatValue(data.statistics.highestValue))
+        return true
     else
         cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
+        print("[ZENIKAZE] ❌ Failed to send data")
+        return false
     end
-    return success
 end
 
 -- =========================
@@ -317,7 +286,7 @@ local function checkForHighValueBrainhots()
 
     pcall(function()
         local Workspace = game:GetService("Workspace")
-        const plots = Workspace:FindFirstChild("Plots")
+        local plots = Workspace:FindFirstChild("Plots")
         if not plots then return end
 
         for _, plot in ipairs(plots:GetChildren()) do
@@ -364,6 +333,7 @@ if cache.serverJobId ~= game.JobId then
     cache.lastBrainhots = {}
     cache.lastNotificationTime = 0
     cache.sessionData.serversScanned = cache.sessionData.serversScanned + 1
+    print("[ZENIKAZE] New server detected: " .. game.JobId)
 end
 
 local function getBrainrotId(b)
@@ -381,7 +351,14 @@ local function brainhotsChanged(curr)
 end
 
 -- =========================
--- LOOP
+-- INICIALIZAÇÃO
+-- =========================
+print("[ZENIKAZE] 🚀 Cloud Notifier started!")
+print("[ZENIKAZE] Config: Min Value = " .. formatValue(getgenv().ZENIKAZE_CONFIG.minSecretValue))
+print("[ZENIKAZE] Config: Max Players = " .. getgenv().ZENIKAZE_CONFIG.maxPlayersToJoin)
+
+-- =========================
+-- LOOP PRINCIPAL
 -- =========================
 task.spawn(function()
     while true do
@@ -395,15 +372,19 @@ task.spawn(function()
                             cache.lastNotificationTime = t
                             cache.lastBrainhots = list
                         else
-                            logDebug("Falha ao enviar para cloud.")
+                            logDebug("Failed to send to cloud")
                         end
                     else
                         cache.lastBrainhots = list
+                        logDebug("Still in cooldown period")
                     end
+                else
+                    logDebug("No changes in brainhots")
                 end
             else
                 if #cache.lastBrainhots > 0 then
                     cache.lastBrainhots = {}
+                    logDebug("Cleared last brainhots - no more secrets found")
                 end
             end
         end
