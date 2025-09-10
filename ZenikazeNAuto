@@ -52,7 +52,7 @@ math.randomseed(tick() % 1 * 1e7)
 -- =========================
 local function logDebug(msg)
     if getgenv().ZENIKAZE_CONFIG.debugMode then
-        print("[ZENIKAZE DEBUG] " .. tostring(msg))
+        -- Debug silencioso
     end
 end
 
@@ -65,7 +65,6 @@ local function generateUserId()
             table.insert(id, string.sub(chars, idx, idx))
         end
         getgenv().ZENIKAZE_CONFIG.userId = table.concat(id)
-        print("[ZENIKAZE] Generated User ID: " .. getgenv().ZENIKAZE_CONFIG.userId)
     end
     return getgenv().ZENIKAZE_CONFIG.userId
 end
@@ -256,9 +255,6 @@ local function sendToCloud(foundBrainhots, jobId)
     -- URL no formato que o Auto Joiner espera
     local url = string.format("%s/zenikaze/servers/%s/%s.json", 
         getgenv().ZENIKAZE_CONFIG.firebaseUrl, userId, tostring(timestamp))
-    
-    print("[ZENIKAZE] Sending data to: " .. url)
-    print("[ZENIKAZE] Data preview: " .. jsonData:sub(1, 200) .. "...")
 
     local success, response = raw_request({
         Url = url,
@@ -269,11 +265,9 @@ local function sendToCloud(foundBrainhots, jobId)
 
     if success then
         cache.sessionData.cloudConnections = cache.sessionData.cloudConnections + 1
-        print("[ZENIKAZE] ✅ Data sent successfully! Secrets: " .. #foundBrainhots .. " | Highest: " .. formatValue(data.statistics.highestValue))
         return true
     else
         cache.sessionData.failedConnections = cache.sessionData.failedConnections + 1
-        print("[ZENIKAZE] ❌ Failed to send data")
         return false
     end
 end
@@ -333,7 +327,6 @@ if cache.serverJobId ~= game.JobId then
     cache.lastBrainhots = {}
     cache.lastNotificationTime = 0
     cache.sessionData.serversScanned = cache.sessionData.serversScanned + 1
-    print("[ZENIKAZE] New server detected: " .. game.JobId)
 end
 
 local function getBrainrotId(b)
