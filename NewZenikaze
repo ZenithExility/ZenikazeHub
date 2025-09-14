@@ -1,4 +1,4 @@
--- Zenikaze Hub - Versão Final [Jump Boost + ESP Menor + Auto Joiner Atualizado + FPS Fix]
+-- Zenikaze Hub - Versão Final [Jump Boost + ESP Menor + Auto Joiner Atualizado + FPS Fix + Detecção Melhorada]
 task.wait(1)
 
 -- ======================== --
@@ -46,6 +46,85 @@ function SaveSystem.Load()
     return success and result or {}
 end
 local SavedSettings = SaveSystem.Load()
+
+-- ======================== --
+--   SISTEMA DE DETECÇÃO    --
+-- ======================== --
+local ExecutedScripts = {
+    LaserAura = false,
+    ControlPlayer = false,
+    GuiStates = {
+        LaserAura = false,     -- Se a GUI está aberta
+        ControlPlayer = false  -- Se a GUI está aberta
+    }
+}
+
+-- Função para detectar se um script foi executado
+local function detectScriptExecution(scriptName)
+    if scriptName == "LaserAura" then
+        -- Detecta se o Laser Aura foi executado verificando variáveis globais ou GUIs específicas
+        if _G.LaserAuraLoaded or PlayerGui:FindFirstChild("LaserAuraGUI") then
+            ExecutedScripts.LaserAura = true
+            -- Detecta se a GUI está aberta
+            local gui = PlayerGui:FindFirstChild("LaserAuraGUI")
+            ExecutedScripts.GuiStates.LaserAura = gui and gui.Enabled or false
+        end
+    elseif scriptName == "ControlPlayer" then
+        -- Detecta se o Control Player foi executado
+        if _G.ControlPlayerLoaded or PlayerGui:FindFirstChild("ControlPlayerGUI") then
+            ExecutedScripts.ControlPlayer = true
+            -- Detecta se a GUI está aberta
+            local gui = PlayerGui:FindFirstChild("ControlPlayerGUI")
+            ExecutedScripts.GuiStates.ControlPlayer = gui and gui.Enabled or false
+        end
+    end
+end
+
+-- Função para monitorar continuamente os scripts
+local function monitorScripts()
+    task.spawn(function()
+        while true do
+            detectScriptExecution("LaserAura")
+            detectScriptExecution("ControlPlayer")
+            task.wait(1) -- Verifica a cada segundo
+        end
+    end)
+end
+
+-- Função para alternar estado da GUI
+local function toggleScriptGui(scriptName, state)
+    if scriptName == "LaserAura" then
+        local gui = PlayerGui:FindFirstChild("LaserAuraGUI")
+        if gui then
+            gui.Enabled = state
+            ExecutedScripts.GuiStates.LaserAura = state
+        end
+    elseif scriptName == "ControlPlayer" then
+        local gui = PlayerGui:FindFirstChild("ControlPlayerGUI")
+        if gui then
+            gui.Enabled = state
+            ExecutedScripts.GuiStates.ControlPlayer = state
+        end
+    end
+end
+
+-- Função para resetar detecção de scripts
+local function resetExecutedScripts()
+    ExecutedScripts.LaserAura = false
+    ExecutedScripts.ControlPlayer = false
+    ExecutedScripts.GuiStates.LaserAura = false
+    ExecutedScripts.GuiStates.ControlPlayer = false
+    
+    -- Remove marcadores globais
+    _G.LaserAuraLoaded = nil
+    _G.ControlPlayerLoaded = nil
+    
+    showNotification("Reset Scripts", "Detecção de scripts resetada!", 3)
+end
+
+-- Inicia o monitoramento
+monitorScripts()
+
 if not _G.ZenikazeScripts then _G.ZenikazeScripts = { Speed=false, FPS=false, Float=false, PlatFly=false, Aimbot=false, Jump=false } end
 
 -- ======================== --
@@ -1735,396 +1814,60 @@ createButton(PageStealer, "Plataform Fly", function()
     BackButton.Visible=true; showOnly(SubPagePlatFly)
 end)
 
--- Laser Aura button
-createButton(PageStealer, "Laser Aura", function()
-    if not ScriptStatus.LaserAura then
+-- Laser Aura button com detecção melhorada
+local LaserAuraBtn = createButton(PageStealer, "Laser Aura", function()
+    if not ExecutedScripts.LaserAura then
         pcall(function()
             loadstring(game:HttpGet("https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/LaserCape"))()
+            _G.LaserAuraLoaded = true -- Marca que foi executado
         end)
+        ExecutedScripts.LaserAura = true
         ScriptStatus.LaserAura = true
         SavedSettings.LaserAura = true
         SaveSystem.Save(SavedSettings)
         showNotification("Laser Aura", "Executado com sucesso!", 3)
     else
-        showNotification("Laser Aura", "Já foi executado!", 2)
+        -- Se já foi executado, alterna entre ativar/desativar GUI
+        local currentState = ExecutedScripts.GuiStates.LaserAura
+        toggleScriptGui("LaserAura", not currentState)
+        showNotification("Laser Aura", (not currentState) and "GUI Ativada!" or "GUI Desativada!", 2)
     end
 end)
 
--- Control Player button
-createButton(PageStealer, "Control Player", function()
-    if not ScriptStatus.ControlPlayer then
+-- Control Player button com detecção melhorada
+local ControlPlayerBtn = createButton(PageStealer, "Control Player", function()
+    if not ExecutedScripts.ControlPlayer then
         pcall(function()
             loadstring(game:HttpGet("https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ControlPlayer"))()
+            _G.ControlPlayerLoaded = true -- Marca que foi executado
         end)
+        ExecutedScripts.ControlPlayer = true
         ScriptStatus.ControlPlayer = true
         SavedSettings.ControlPlayer = true
         SaveSystem.Save(SavedSettings)
         showNotification("Control Player", "Executado com sucesso!", 3)
     else
-        showNotification("Control Player", "Já foi executado!", 2)
+        -- Se já foi executado, alterna entre ativar/desativar GUI
+        local currentState = ExecutedScripts.GuiStates.ControlPlayer
+        toggleScriptGui("ControlPlayer", not currentState)
+        showNotification("Control Player", (not currentState) and "GUI Ativada!" or "GUI Desativada!", 2)
     end
 end)
 
--- ======================== --
---   HELPER (HOME)          --
--- ======================== --
-createButton(PageHelper, "Speed", function()
-    BackButton.Visible=true; showOnly(SubPageSpeed)
-end)
-
-createButton(PageHelper, "Jump Boost", function()
-    BackButton.Visible=true; showOnly(SubPageJump)
-end)
-
-createToggle(PageHelper, "Aimbot Helper", ScriptStatus.AimbotActive, function(state)
-    ScriptStatus.AimbotActive = state
-    SavedSettings.AimbotActive = state
-    SaveSystem.Save(SavedSettings)
-    if state then
-        startAimbotHelper()
-        showNotification("Aimbot Helper", "Ativado! Use Q, clique ou toque", 3)
-    else
-        stopAimbotHelper()
-        showNotification("Aimbot Helper", "Desativado!", 2)
-    end
-end)
-
-createToggle(PageHelper, "ESP Players", ScriptStatus.ESPPlayers, function(state)
-    ESP_SETTINGS.Players = state
-    ScriptStatus.ESPPlayers = state
-    SavedSettings.ESPPlayers = state
-    SaveSystem.Save(SavedSettings)
-    if state then
-        scanForPlayers()
-        if not ActiveConnections.ESPUpdate then
-            ActiveConnections.ESPUpdate = RunService.RenderStepped:Connect(updateESP)
-        end
-        showNotification("ESP Players", "Ativado!", 2)
-    else
-        for player, _ in pairs(ESPObjects) do
-            if ESPObjects[player] and ESPObjects[player].type == "Player" then
-                removeESP(player)
-            end
-        end
-        showNotification("ESP Players", "Desativado!", 2)
-    end
-end)
-
-createToggle(PageHelper, "ESP Brainrot Gods", ScriptStatus.ESPBrainhotsGods, function(state)
-    ESP_SETTINGS.BrainhotsGods = state
-    ScriptStatus.ESPBrainhotsGods = state
-    SavedSettings.ESPBrainhotsGods = state
-    SaveSystem.Save(SavedSettings)
-    if not state then
-        for object, espData in pairs(ESPObjects) do
-            if espData.rarity == "BrainrotGod" then
-                removeESP(object)
-            end
-        end
-        showNotification("ESP Brainrot Gods", "Desativado!", 2)
-    else
-        showNotification("ESP Brainrot Gods", "Ativado!", 2)
-    end
-end)
-
-createToggle(PageHelper, "ESP Brainrot Secrets", ScriptStatus.ESPBrainhotsSecrets, function(state)
-    ESP_SETTINGS.BrainhotsSecrets = state
-    ScriptStatus.ESPBrainhotsSecrets = state
-    SavedSettings.ESPBrainhotsSecrets = state
-    SaveSystem.Save(SavedSettings)
-    if not state then
-        for object, espData in pairs(ESPObjects) do
-            if espData.rarity == "Secret" then
-                removeESP(object)
-            end
-        end
-        showNotification("ESP Brainrot Secrets", "Desativado!", 2)
-    else
-        showNotification("ESP Brainrot Secrets", "Ativado!", 2)
-    end
-end)
-
-createToggle(PageHelper, "FPS Imune", ScriptStatus.FPSImune, function(state)
-    toggleFPSImune(state)
-end)
-
-createToggle(PageHelper, "Base Opacity", ScriptStatus.BasesOpacity, function(state)
-    ScriptStatus.BasesOpacity = state
-    SavedSettings.BasesOpacity = state
-    SaveSystem.Save(SavedSettings)
-    if state then
-        if ActiveConnections.BaseOpacity then task.cancel(ActiveConnections.BaseOpacity) end
-        ActiveConnections.BaseOpacity = task.spawn(function()
-            while ScriptStatus.BasesOpacity do
-                pcall(function()
-                    local plotsFolder = workspace:FindFirstChild("Plots")
-                    if plotsFolder then
-                        for _, plotModel in ipairs(plotsFolder:GetChildren()) do
-                            local decorations = plotModel:FindFirstChild("Decorations")
-                            if decorations and decorations:IsA("Folder") then
-                                for _, decorModel in ipairs(decorations:GetChildren()) do
-                                    for _, obj in ipairs(decorModel:GetDescendants()) do
-                                        if obj:IsA("BasePart") then obj.Transparency = 0.7 end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end)
-                task.wait(2)
-            end
-        end)
-        showNotification("Base Opacity", "Transparência das bases ativada!", 3)
-    else
-        if ActiveConnections.BaseOpacity then task.cancel(ActiveConnections.BaseOpacity); ActiveConnections.BaseOpacity=nil end
-        pcall(function()
-            local plotsFolder = workspace:FindFirstChild("Plots")
-            if plotsFolder then
-                for _, plotModel in ipairs(plotsFolder:GetChildren()) do
-                    local decorations = plotModel:FindFirstChild("Decorations")
-                    if decorations and decorations:IsA("Folder") then
-                        for _, decorModel in ipairs(decorations:GetChildren()) do
-                            for _, obj in ipairs(decorModel:GetDescendants()) do
-                                if obj:IsA("BasePart") then obj.Transparency = 0 end
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-        showNotification("Base Opacity", "Transparência das bases desativada!", 2)
-    end
-end)
-
-createToggle(PageHelper, "ESP Base Time", ScriptStatus.BaseESP, function(state)
-    ScriptStatus.BaseESP = state
-    SavedSettings.BaseESP = state
-    SaveSystem.Save(SavedSettings)
-    if state then
-        local updateFunc = createBaseTimeESP()
-        ActiveConnections.BaseESP = RunService.RenderStepped:Connect(updateFunc)
-        showNotification("ESP Base Time", "Ativado!", 2)
-    else
-        if ActiveConnections.BaseESP then
-            ActiveConnections.BaseESP:Disconnect()
-            ActiveConnections.BaseESP = nil
-        end
-        for _, esp in pairs(BaseESPObjects) do
-            esp:Destroy()
-        end
-        BaseESPObjects = {}
-        showNotification("ESP Base Time", "Desativado!", 2)
-    end
-end)
-
--- ======================== --
---   CONFIG (SCROLLÁVEL)    --
--- ======================== --
-createButton(PageConfig, "Rejoin Server", function()
-    showNotification("🔄 Rejoin","Reconectando...",2); TeleportService:Teleport(game.PlaceId, LocalPlayer)
-end)
-createButton(PageConfig, "Server Hop (auto vago)", function()
-    task.spawn(function()
-        pcall(function()
-            local resp = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100")
-            local servers = HttpService:JSONDecode(resp)
-            for _, s in pairs(servers.data) do
-                if s.playing < s.maxPlayers and s.id ~= game.JobId then
-                    TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer); break
-                end
-            end
-        end)
-    end)
-    showNotification("🔄 Server Hop","Procurando servidor...",3)
-end)
-
-local JobWrap = Instance.new("Frame", PageConfig)
-JobWrap.Size=UDim2.new(1,0,0,52); JobWrap.BackgroundColor3=Color3.fromRGB(20,20,20); JobWrap.BorderSizePixel=0
-Instance.new("UICorner", JobWrap).CornerRadius=UDim.new(0,12)
-
-local JLbl = Instance.new("TextLabel", JobWrap)
-JLbl.Size=UDim2.new(1,-10,0,20); JLbl.Position=UDim2.new(0,10,0,4); JLbl.BackgroundTransparency=1
-JLbl.Text="Job ID"; JLbl.TextColor3=Color3.fromRGB(255,255,255); JLbl.TextSize=12; JLbl.Font=Enum.Font.Gotham; JLbl.TextXAlignment=Enum.TextXAlignment.Left
-
-local JobIdBox=Instance.new("TextBox", JobWrap)
-JobIdBox.Size=UDim2.new(1,-20,0,22); JobIdBox.Position=UDim2.new(0,10,0,26)
-JobIdBox.BackgroundColor3=Color3.fromRGB(35,35,45); JobIdBox.BorderSizePixel=0; JobIdBox.Text=""
-JobIdBox.PlaceholderText="Digite o Job ID..."; JobIdBox.TextColor3=Color3.fromRGB(255,255,255); JobIdBox.PlaceholderColor3=Color3.fromRGB(120,120,120)
-JobIdBox.TextSize=12; JobIdBox.Font=Enum.Font.Gotham; JobIdBox.ClearTextOnFocus=false
-local jCorner = Instance.new("UICorner")
-jCorner.CornerRadius = UDim.new(0,8)
-jCorner.Parent = JobIdBox
-
-createButton(PageConfig, "Join por Job ID", function()
-    local id = JobIdBox.Text or ""
-    if id=="" then showNotification("❌ Erro","Insira um Job ID válido!",3) return end
-    pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, id, LocalPlayer) end)
-    showNotification("🔄 Job ID","Conectando...",3)
-end)
-createButton(PageConfig, "Copiar Job ID atual", function()
-    local jid = game.JobId
-    if setclipboard then setclipboard(jid); showNotification("✅ Copiado","Job ID no clipboard!",3)
-    else showNotification("📋 Job ID", "Job ID: "..jid, 6) end
-end)
-createButton(PageConfig, "Join Discord (copiar link)", function()
-    local link="https://discord.gg/3Mzg7c7XGX"
-    if setclipboard then setclipboard(link); showNotification("✅ Discord","Link copiado!",3)
-    else showNotification("🔗 Discord", link, 8) end
-end)
-createButton(PageConfig, "Clear Settings", function()
-    SavedSettings = {}; SaveSystem.Save({}); showNotification("🗑️ Settings","Configurações limpas!",3)
-end)
-createButton(PageConfig, "Protection Status", function()
-    showNotification("🔒 Proteção", "Teleports manuais: PERMITIDOS\nTeleports automáticos: BLOQUEADOS",5)
-end)
-
--- ======================== --
---      EVENTOS UI          --
--- ======================== --
-CloseButton.MouseEnter:Connect(function() 
-    local animInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-    TweenService:Create(CloseButton, animInfo, {BackgroundColor3=ZENIKAZE_COLOR, TextColor3=Color3.fromRGB(0,0,0)}):Play() 
-end)
-CloseButton.MouseLeave:Connect(function() 
-    local animInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-    TweenService:Create(CloseButton, animInfo, {BackgroundColor3=Color3.fromRGB(0,0,0), TextColor3=ZENIKAZE_COLOR}):Play() 
-end)
-CloseButton.MouseButton1Click:Connect(function() MainFrame.Visible=false; InterfaceVisible=false end)
-
-ToggleButton.MouseButton1Click:Connect(function()
-    InterfaceVisible = not InterfaceVisible
-    MainFrame.Visible = InterfaceVisible
-    if InterfaceVisible then
-        MainFrame.Size = UDim2.new(0,60,0,60)
-        local animInfo = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        TweenService:Create(MainFrame, animInfo, {Size=UDim2.new(0,320,0,240)}):Play()
-    end
-end)
-
-BackButton.MouseButton1Click:Connect(function()
-    BackButton.Visible=false
-    if currentHome=="Stealer" then showOnly(PageStealer)
-    elseif currentHome=="Helper" then showOnly(PageHelper)
-    elseif currentHome=="AutoJoiner" then showOnly(PageAutoJoiner)
-    elseif currentHome=="Config" then showOnly(PageConfig) end
-end)
-
-do
-    local dragging=false; local startPos; local startInput
-    local function upd(i)
-        local delta = i.Position - startInput
-        MainFrame.Position = UDim2.new(MainFrame.Position.X.Scale, startPos.X.Offset + delta.X, MainFrame.Position.Y.Scale, startPos.Y.Offset + delta.Y)
-    end
-    Header.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
-            dragging=true; startInput=i.Position; startPos=MainFrame.Position
-            i.Changed:Connect(function() if i.UserInputState==Enum.UserInputState.End then dragging=false end end)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(i)
-        if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then upd(i) end
-    end)
-end
-
--- ======================== --
---   APLICA SALVOS INICIAIS --
--- ======================== --
-task.spawn(function()
-    task.wait(1.2)
-    
-    if SavedSettings.SpeedControl then 
-        speedActive=true; 
-        pcall(startSpeedControl) 
-    end
-    if SavedSettings.PlatFly then 
-        pcall(togglePlatformFly, true) 
-    end
-    if SavedSettings.JumpBoost then 
-        pcall(toggleHighJump, true) 
-    end
-    if SavedSettings.FPSDestroyer then 
-        pcall(FPSDestroyer.Start, FPSDestroyer) 
-    end
-    if SavedSettings.AimbotActive then
-        pcall(startAimbotHelper)
-    end
-    if SavedSettings.FPSImune then
-        pcall(toggleFPSImune, true)
-    end
-    if SavedSettings.LaserAura then
-        pcall(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/LaserCape"))()
-        end)
-    end
-    if SavedSettings.ControlPlayer then
-        pcall(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ControlPlayer"))()
-        end)
-    end
-    
-    if SavedSettings.ESPPlayers then
-        ESP_SETTINGS.Players = true
-        pcall(scanForPlayers)
-        ActiveConnections.ESPUpdate = RunService.RenderStepped:Connect(updateESP)
-    end
-    if SavedSettings.BaseESP then
-        local updateFunc = createBaseTimeESP()
-        ActiveConnections.BaseESP = RunService.RenderStepped:Connect(updateFunc)
-    end
-    if SavedSettings.BasesOpacity then
-        if ActiveConnections.BaseOpacity then task.cancel(ActiveConnections.BaseOpacity) end
-        ActiveConnections.BaseOpacity = task.spawn(function()
-            while ScriptStatus.BasesOpacity do
-                pcall(function()
-                    local plotsFolder = workspace:FindFirstChild("Plots")
-                    if plotsFolder then
-                        for _, plotModel in ipairs(plotsFolder:GetChildren()) do
-                            local decorations = plotModel:FindFirstChild("Decorations")
-                            if decorations and decorations:IsA("Folder") then
-                                for _, decorModel in ipairs(decorations:GetChildren()) do
-                                    for _, obj in ipairs(decorModel:GetDescendants()) do
-                                        if obj:IsA("BasePart") then obj.Transparency = 0.7 end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end)
-                task.wait(2)
-            end
-        end)
-    end
-    
-    showNotification("Zenikaze Hub", "Versao Final carregada com sucesso!", 3)
-end)
-
+-- Atualiza os textos dos botões baseado no estado
 task.spawn(function()
     while true do
-        pcall(function()
-            if ESP_SETTINGS.Enabled and ESP_SETTINGS.Players then
-                scanForPlayers()
-            end
-            if ESP_SETTINGS.Enabled and (ESP_SETTINGS.BrainhotsGods or ESP_SETTINGS.BrainhotsSecrets) then
-                scanForObjects()
-            end
-            updateESP()
-        end)
-        task.wait(2)
+        if ExecutedScripts.LaserAura then
+            LaserAuraBtn.Text = ExecutedScripts.GuiStates.LaserAura and "Laser Aura [ON]" or "Laser Aura [OFF]"
+        else
+            LaserAuraBtn.Text = "Laser Aura"
+        end
+        
+        if ExecutedScripts.ControlPlayer then
+            ControlPlayerBtn.Text = ExecutedScripts.GuiStates.ControlPlayer and "Control Player [ON]" or "Control Player [OFF]"
+        else
+            ControlPlayerBtn.Text = "Control Player"
+        end
+        task.wait(1)
     end
-end)
-
--- ======================== --
---        CLEANUP           --
--- ======================== --
-game:BindToClose(function()
-    SaveSystem.Save(SavedSettings)
-    for _, c in pairs(ActiveConnections) do
-        if c and typeof(c)=="RBXScriptConnection" then c:Disconnect()
-        elseif c and typeof(c)=="thread" then task.cancel(c) end
-    end
-    if speedConn then speedConn:Disconnect() end
-    if floatConn then floatConn:Disconnect() end
-    if platConn  then platConn:Disconnect() end
-    if hjConn then hjConn:Disconnect() end
-    pcall(stopAimbotHelper)
 end)
