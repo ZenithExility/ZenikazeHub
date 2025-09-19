@@ -1833,65 +1833,670 @@ end
 
 -- Botão principal de teleporte
 local TPHighestBtn = createButton(SubPageTPHighest, "TP Now!", function()
-    -- Código exato que foi fornecido
+    -- Código fornecido pelo usuário para TP Highest
     pcall(function()
+        -- Services and Core Initialization
         local Players = game:GetService("Players")
-        local TeleportService = game:GetService("TeleportService")
-        local LocalPlayer = Players.LocalPlayer
-        local UserInputService = game:GetService("UserInputService")
+        local TweenService = game:GetService("TweenService")
+        local RunService = game:GetService("RunService")
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local Workspace = game:GetService("Workspace")
 
-        local Plots = Workspace:WaitForChild("Plots")
+        -- Player and GUI References
+        local player = Players.LocalPlayer
+        local playerGui = player:WaitForChild("PlayerGui")
 
-        local function parseBrainhotValue(display)
-            local cleanText = display:gsub("[,% ]", ""):upper()
-            local number, suffix = cleanText:match("([%d%.]+)([KMBT]?)$")
-            if not number then return 0 end
+        -- Configuration Constants
+        local CONFIG = {
+            HUB_NAME = "Zenikaze Hub",
+            HUB_VERSION = "v2.1.0",
+            DISCORD_LINK = "discord.gg/H7dubZ3YTC",
+            DEVELOPER = "ZenithExility",
             
-            local value = tonumber(number) or 0
-            if suffix == "K" then value = value * 1e3
-            elseif suffix == "M" then value = value * 1e6
-            elseif suffix == "B" then value = value * 1e9
-            elseif suffix == "T" then value = value * 1e12 end
+            -- Minimalist Color Scheme
+            COLORS = {
+                PRIMARY = Color3.fromRGB(255, 215, 0),  -- Gold/Yellow
+                SECONDARY = Color3.fromRGB(200, 200, 200),  -- Light Gray
+                BACKGROUND = Color3.fromRGB(0, 0, 0),  -- Black
+                TEXT_DIM = Color3.fromRGB(120, 120, 120),  -- Dim Gray
+                PROGRESS_BG = Color3.fromRGB(40, 40, 40),  -- Dark Gray
+            },
             
-            return value
+            -- Animation Settings
+            ANIMATIONS = {
+                FADE_DURATION = 0.6,
+                PROGRESS_SPEED = 0.5,
+                TEXT_SPEED = 0.3,
+            },
+            
+            -- UI Dimensions
+            UI = {
+                TITLE_HEIGHT = 50,
+                SUBTITLE_HEIGHT = 20,
+                PROGRESS_WIDTH = 300,
+                PROGRESS_HEIGHT = 8,
+                STATUS_HEIGHT = 16,
+            }
+        }
+
+        -- Global Variables
+        local loadingScreenGui = nil
+        local progressValue = 0
+        local isCompleted = false
+        local animationConnections = {}
+        local scriptCompleted = false
+
+        local function createTween(object, tweenInfo, properties)
+            local tween = TweenService:Create(object, tweenInfo, properties)
+            table.insert(animationConnections, tween)
+            return tween
         end
 
-        local highestValue = 0
-        local bestPosition = nil
+        local function cleanupAnimations()
+            for _, tween in pairs(animationConnections) do
+                if tween then
+                    tween:Cancel()
+                end
+            end
+            animationConnections = {}
+        end
 
-        for _, plot in pairs(Plots:GetChildren()) do
-            local decorations = plot:FindFirstChild("Decorations")
-            if decorations then
-                for _, decorModel in pairs(decorations:GetChildren()) do
-                    for _, item in pairs(decorModel:GetDescendants()) do
-                        if item:IsA("BasePart") and item.Name == "BrainrotGod" then
-                            for _, descendant in pairs(item:GetDescendants()) do
-                                if descendant:IsA("TextLabel") and descendant.Name == "DisplayName" then
-                                    local brainhotName = descendant.Text
-                                    local valueInfo = brainhotName:match("%((.-)%)")
-                                    if valueInfo then
-                                        local value = parseBrainhotValue(valueInfo)
-                                        if value > highestValue then
-                                            highestValue = value
-                                            bestPosition = item.Position
-                                        end
-                                    end
+        local function createMinimalistLoadingScreen()
+            if loadingScreenGui then
+                loadingScreenGui:Destroy()
+            end
+            
+            -- Main ScreenGui
+            loadingScreenGui = Instance.new("ScreenGui")
+            loadingScreenGui.Name = "ZenikazeMinimalistLoading"
+            loadingScreenGui.Parent = playerGui
+            loadingScreenGui.ResetOnSpawn = false
+            loadingScreenGui.IgnoreGuiInset = true
+            loadingScreenGui.DisplayOrder = 999999
+            
+            -- Background Frame
+            local backgroundFrame = Instance.new("Frame")
+            backgroundFrame.Name = "BackgroundFrame"
+            backgroundFrame.Size = UDim2.new(1, 0, 1, 0)
+            backgroundFrame.Position = UDim2.new(0, 0, 0, 0)
+            backgroundFrame.BackgroundColor3 = CONFIG.COLORS.BACKGROUND
+            backgroundFrame.BorderSizePixel = 0
+            backgroundFrame.Parent = loadingScreenGui
+            
+            -- Health bar cover (to hide the health bar during reset)
+            local healthBarCover = Instance.new("Frame")
+            healthBarCover.Name = "HealthBarCover"
+            healthBarCover.Size = UDim2.new(0, 300, 0, 100)
+            healthBarCover.Position = UDim2.new(0, 20, 1, -120)
+            healthBarCover.BackgroundColor3 = CONFIG.COLORS.BACKGROUND
+            healthBarCover.BorderSizePixel = 0
+            healthBarCover.ZIndex = 1000
+            healthBarCover.Parent = backgroundFrame
+            
+            -- Top health bar cover (covers the health bar in top right)
+            local topHealthCover = Instance.new("Frame")
+            topHealthCover.Name = "TopHealthCover"
+            topHealthCover.Size = UDim2.new(0, 200, 0, 80)
+            topHealthCover.Position = UDim2.new(1, -220, 0, 20)
+            topHealthCover.BackgroundColor3 = CONFIG.COLORS.BACKGROUND
+            topHealthCover.BorderSizePixel = 0
+            topHealthCover.ZIndex = 1000
+            topHealthCover.Parent = backgroundFrame
+            
+            -- Center Container
+            local centerContainer = Instance.new("Frame")
+            centerContainer.Name = "CenterContainer"
+            centerContainer.Size = UDim2.new(0, 400, 0, 200)
+            centerContainer.Position = UDim2.new(0.5, -200, 0.5, -100)
+            centerContainer.BackgroundTransparency = 1
+            centerContainer.Parent = backgroundFrame
+            
+            -- Main Title
+            local titleLabel = Instance.new("TextLabel")
+            titleLabel.Name = "TitleLabel"
+            titleLabel.Size = UDim2.new(1, 0, 0, CONFIG.UI.TITLE_HEIGHT)
+            titleLabel.Position = UDim2.new(0, 0, 0, 0)
+            titleLabel.BackgroundTransparency = 1
+            titleLabel.Text = CONFIG.HUB_NAME
+            titleLabel.TextColor3 = CONFIG.COLORS.PRIMARY
+            titleLabel.TextSize = 32
+            titleLabel.Font = Enum.Font.Gotham
+            titleLabel.TextXAlignment = Enum.TextXAlignment.Center
+            titleLabel.Parent = centerContainer
+            
+            -- Subtitle
+            local subtitleLabel = Instance.new("TextLabel")
+            subtitleLabel.Name = "SubtitleLabel"
+            subtitleLabel.Size = UDim2.new(1, 0, 0, CONFIG.UI.SUBTITLE_HEIGHT)
+            subtitleLabel.Position = UDim2.new(0, 0, 0, CONFIG.UI.TITLE_HEIGHT + 5)
+            subtitleLabel.BackgroundTransparency = 1
+            subtitleLabel.Text = "made by " .. CONFIG.DEVELOPER
+            subtitleLabel.TextColor3 = CONFIG.COLORS.TEXT_DIM
+            subtitleLabel.TextSize = 14
+            subtitleLabel.Font = Enum.Font.Gotham
+            subtitleLabel.TextXAlignment = Enum.TextXAlignment.Center
+            subtitleLabel.Parent = centerContainer
+            
+            -- Progress Container
+            local progressContainer = Instance.new("Frame")
+            progressContainer.Name = "ProgressContainer"
+            progressContainer.Size = UDim2.new(0, CONFIG.UI.PROGRESS_WIDTH, 0, CONFIG.UI.PROGRESS_HEIGHT)
+            progressContainer.Position = UDim2.new(0.5, -CONFIG.UI.PROGRESS_WIDTH/2, 0, CONFIG.UI.TITLE_HEIGHT + CONFIG.UI.SUBTITLE_HEIGHT + 40)
+            progressContainer.BackgroundColor3 = CONFIG.COLORS.PROGRESS_BG
+            progressContainer.BorderSizePixel = 0
+            progressContainer.Parent = centerContainer
+            
+            local progressCorner = Instance.new("UICorner")
+            progressCorner.CornerRadius = UDim.new(0, CONFIG.UI.PROGRESS_HEIGHT/2)
+            progressCorner.Parent = progressContainer
+            
+            -- Progress Bar
+            local progressBar = Instance.new("Frame")
+            progressBar.Name = "ProgressBar"
+            progressBar.Size = UDim2.new(0, 0, 1, 0)
+            progressBar.Position = UDim2.new(0, 0, 0, 0)
+            progressBar.BackgroundColor3 = CONFIG.COLORS.PRIMARY
+            progressBar.BorderSizePixel = 0
+            progressBar.Parent = progressContainer
+            
+            local progressBarCorner = Instance.new("UICorner")
+            progressBarCorner.CornerRadius = UDim.new(0, CONFIG.UI.PROGRESS_HEIGHT/2)
+            progressBarCorner.Parent = progressBar
+            
+            -- Percentage Label
+            local percentageLabel = Instance.new("TextLabel")
+            percentageLabel.Name = "PercentageLabel"
+            percentageLabel.Size = UDim2.new(0, 60, 0, 20)
+            percentageLabel.Position = UDim2.new(1, 10, 0, -6)
+            percentageLabel.BackgroundTransparency = 1
+            percentageLabel.Text = "0%"
+            percentageLabel.TextColor3 = CONFIG.COLORS.PRIMARY
+            percentageLabel.TextSize = 14
+            percentageLabel.Font = Enum.Font.GothamBold
+            percentageLabel.TextXAlignment = Enum.TextXAlignment.Left
+            percentageLabel.Parent = progressContainer
+            
+            -- Status Text
+            local statusLabel = Instance.new("TextLabel")
+            statusLabel.Name = "StatusLabel"
+            statusLabel.Size = UDim2.new(1, 0, 0, CONFIG.UI.STATUS_HEIGHT)
+            statusLabel.Position = UDim2.new(0, 0, 0, CONFIG.UI.TITLE_HEIGHT + CONFIG.UI.SUBTITLE_HEIGHT + CONFIG.UI.PROGRESS_HEIGHT + 60)
+            statusLabel.BackgroundTransparency = 1
+            statusLabel.Text = "Initializing..."
+            statusLabel.TextColor3 = CONFIG.COLORS.SECONDARY
+            statusLabel.TextSize = 14
+            statusLabel.Font = Enum.Font.Gotham
+            statusLabel.TextXAlignment = Enum.TextXAlignment.Center
+            statusLabel.Parent = centerContainer
+            
+            -- Discord Label (Bottom)
+            local discordLabel = Instance.new("TextLabel")
+            discordLabel.Name = "DiscordLabel"
+            discordLabel.Size = UDim2.new(0, 200, 0, 20)
+            discordLabel.Position = UDim2.new(0.5, -100, 1, -40)
+            discordLabel.BackgroundTransparency = 1
+            discordLabel.Text = CONFIG.DISCORD_LINK
+            discordLabel.TextColor3 = CONFIG.COLORS.TEXT_DIM
+            discordLabel.TextSize = 12
+            discordLabel.Font = Enum.Font.Gotham
+            discordLabel.TextXAlignment = Enum.TextXAlignment.Center
+            discordLabel.Parent = backgroundFrame
+            
+            return {
+                screenGui = loadingScreenGui,
+                backgroundFrame = backgroundFrame,
+                titleLabel = titleLabel,
+                subtitleLabel = subtitleLabel,
+                progressBar = progressBar,
+                statusLabel = statusLabel,
+                discordLabel = discordLabel
+            }
+        end
+
+        local function updateProgress(targetProgress, statusText, forceUpdate)
+            if not loadingScreenGui then return end
+            
+            local elements = {
+                progressBar = loadingScreenGui.BackgroundFrame.CenterContainer.ProgressContainer.ProgressBar,
+                percentageLabel = loadingScreenGui.BackgroundFrame.CenterContainer.ProgressContainer.PercentageLabel,
+                statusLabel = loadingScreenGui.BackgroundFrame.CenterContainer.StatusLabel
+            }
+            
+            targetProgress = math.clamp(targetProgress, 0, 100)
+            
+            -- Prevent progress from going backwards
+            if targetProgress < progressValue then
+                return
+            end
+            
+            -- Update status text
+            if statusText then
+                elements.statusLabel.Text = statusText
+            end
+            
+            -- If forcing update (for auto progress), go directly to target
+            if forceUpdate then
+                elements.progressBar.Size = UDim2.new(targetProgress / 100, 0, 1, 0)
+                elements.percentageLabel.Text = targetProgress .. "%"
+                progressValue = targetProgress
+                return
+            end
+            
+            -- Determine animation speed based on progress range
+            local animationSpeed
+            if targetProgress >= 90 then
+                animationSpeed = 1.5 -- Slow down at the end
+            else
+                animationSpeed = 0.14 -- Fast progression
+            end
+            
+            -- Animate progress bar
+            local progressTween = createTween(elements.progressBar,
+                TweenInfo.new(animationSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {Size = UDim2.new(targetProgress / 100, 0, 1, 0)}
+            )
+            progressTween:Play()
+            
+            -- Animate percentage text
+            local startProgress = progressValue
+            spawn(function()
+                local duration = animationSpeed
+                local startTime = tick()
+                
+                while tick() - startTime < duration and not isCompleted do
+                    local elapsed = tick() - startTime
+                    local currentProgress = startProgress + (targetProgress - startProgress) * (elapsed / duration)
+                    elements.percentageLabel.Text = math.floor(currentProgress) .. "%"
+                    task.wait()
+                end
+                
+                elements.percentageLabel.Text = targetProgress .. "%"
+                progressValue = targetProgress
+            end)
+        end
+
+        -- Auto progress system that runs smoothly 1 by 1 until script completion
+        local function startAutoProgress()
+            spawn(function()
+                local statusMessages = {
+                    [10] = "Loading components...",
+                    [25] = "Scanning plots...",
+                    [40] = "Equipping tools...",
+                    [55] = "Navigating to target...",
+                    [70] = "Positioning character...",
+                    [85] = "Final approach..."
+                }
+                
+                while not scriptCompleted and progressValue < 89 do
+                    task.wait(0.14) -- Wait ~0.14 seconds to achieve 7% per second (1% every 0.14s)
+                    if not scriptCompleted and progressValue < 89 then
+                        progressValue = progressValue + 1
+                        
+                        -- Update status message at specific progress points
+                        local statusText = statusMessages[progressValue] or nil
+                        if statusText then
+                            updateProgress(progressValue, statusText, true)
+                        else
+                            updateProgress(progressValue, nil, true)
+                        end
+                    end
+                end
+                
+                -- Stay at 89% until script completes
+                while not scriptCompleted do
+                    task.wait(0.1)
+                end
+                
+                -- Script completed, finish to 100%
+                updateProgress(100, "Teleported Successfully...", false)
+                
+                -- Wait 1 second at 100%
+                task.wait(1)
+            end)
+        end
+
+        local function resetCharacter()
+            if player.Character and player.Character:FindFirstChild("Humanoid") then
+                player.Character.Humanoid.Health = 0
+            end
+            
+            local character = player.CharacterAdded:Wait()
+            return character
+        end
+
+        local function runBrainrotScript()
+            local character = player.Character or player.CharacterAdded:Wait()
+            local humanoid = character:WaitForChild("Humanoid")
+            local hrp = character:WaitForChild("HumanoidRootPart")
+            local backpack = player:WaitForChild("Backpack")
+            
+            local function EquipCoilCombo()
+                humanoid:UnequipTools()
+                task.wait(0.1)
+                local combo = backpack:FindFirstChild("Coil Combo")
+                if combo then
+                    humanoid:EquipTool(combo)
+                    return true
+                else
+                    return false
+                end
+            end
+
+            local function getBestBrainrotPosition()
+                local plots = workspace:FindFirstChild("Plots")
+                if not plots then 
+                    return nil, nil 
+                end
+                
+                local bestBrainrot, bestEarning = nil, 0
+                
+                for _, plot in ipairs(plots:GetChildren()) do
+                    local sign = plot:FindFirstChild("PlotSign")
+                    if sign then
+                        local txt = sign:FindFirstChild("TextLabel") and sign.TextLabel.Text or ""
+                        if txt:find(player.Name) then
+                            continue
+                        end
+                    end
+                    
+                    for _, d in ipairs(plot:GetDescendants()) do
+                        if d:IsA("TextLabel") and d.Text and d.Text:find("/s") then
+                            local txt = d.Text:gsub(",", "")
+                            local a, b = txt:match("([%d%.]+)([kKmMbB]?)")
+                            local earning = tonumber(a) or 0
+                            
+                            if b then
+                                b = b:lower()
+                                if b == "k" then earning = earning * 1e3
+                                elseif b == "m" then earning = earning * 1e6
+                                elseif b == "b" then earning = earning * 1e9 end
+                            end
+                            
+                            local p = d.Parent
+                            while p and not p:IsA("Model") do
+                                p = p.Parent
+                            end
+                            
+                            if p and earning > bestEarning then
+                                local part = p:FindFirstChildWhichIsA("BasePart", true)
+                                if part then
+                                    bestEarning = earning
+                                    bestBrainrot = part
                                 end
                             end
                         end
                     end
                 end
+                
+                return bestBrainrot and bestBrainrot.Position or nil, bestBrainrot
+            end
+
+            local function fullStop()
+                if hrp then
+                    hrp.Velocity = Vector3.zero
+                    hrp.RotVelocity = Vector3.zero
+                    for _ = 1, 3 do
+                        task.wait()
+                        hrp.Velocity = Vector3.zero
+                        hrp.RotVelocity = Vector3.zero
+                    end
+                end
+                if humanoid then
+                    humanoid:Move(Vector3.new(0,0,0))
+                    pcall(function() humanoid:MoveTo(hrp.Position) end)
+                end
+            end
+
+            local function equipQuantumClonerAndUse()
+                humanoid:UnequipTools()
+                task.wait(0.01)
+                
+                local cloner = backpack:FindFirstChild("Quantum Cloner")
+                if cloner then
+                    humanoid:EquipTool(cloner)
+                    task.wait(0.01)
+                    
+                    pcall(function()
+                        ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RE/UseItem"):FireServer()
+                    end)
+                    task.wait(0.01)
+                    
+                    pcall(function()
+                        ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Net"):WaitForChild("RE/QuantumCloner/OnTeleport"):FireServer()
+                    end)
+                    
+                    task.wait(0.1)
+                    
+                    -- Unequip Quantum Cloner after use
+                    humanoid:UnequipTools()
+                    
+                    -- Mark script as completed
+                    scriptCompleted = true
+                    
+                    return true
+                else
+                    return false
+                end
+            end
+
+            local function GoToBestBrainrot()
+                if not EquipCoilCombo() then
+                    return false
+                end
+                
+                local targetPos, brainrotPart = getBestBrainrotPosition()
+                if not targetPos or not brainrotPart then 
+                    task.wait(2)
+                    return false
+                end
+                
+                local speed = 45
+                local xOptions = {-465, -353}
+                local closestX = xOptions[1]
+                local minDist = math.huge
+                
+                for i = 1, #xOptions do
+                    local d = math.abs(brainrotPart.Position.X - xOptions[i])
+                    if d < minDist then
+                        minDist = d
+                        closestX = xOptions[i]
+                    end
+                end
+
+                local phase = "ascend50"
+                local connection
+                local finalPhaseStart = nil
+                local velocityToMoveToTriggered = false
+                local completed = false
+
+                connection = RunService.Heartbeat:Connect(function()
+                    if not hrp or not hrp.Parent then
+                        connection:Disconnect()
+                        fullStop()
+                        return
+                    end
+
+                    if phase == "ascend50" then
+                        local diffY = 57 - hrp.Position.Y
+                        if math.abs(diffY) > 1 then
+                            hrp.Velocity = Vector3.new(0, diffY > 0 and speed or -speed, 0)
+                            humanoid:Move(Vector3.new(-410, hrp.Position.Y, hrp.Position.Z) - hrp.Position)
+                        else
+                            hrp.Velocity = Vector3.zero
+                            phase = "descend30"
+                        end
+                        
+                    elseif phase == "descend30" then
+                        local diffY = 57 - hrp.Position.Y
+                        if math.abs(diffY) > 1 then
+                            hrp.Velocity = Vector3.new(0, diffY > 0 and speed or -speed, 0)
+                            humanoid:Move(Vector3.new(targetPos.X, hrp.Position.Y, hrp.Position.Z) - hrp.Position)
+                        else
+                            hrp.Velocity = Vector3.zero
+                            phase = "moveXBrainrot"
+                        end
+
+                    elseif phase == "moveXBrainrot" then
+                        local dirX = Vector3.new(targetPos.X, hrp.Position.Y, hrp.Position.Z) - hrp.Position
+                        if math.abs(dirX.X) > 2 then
+                            hrp.Velocity = Vector3.new(dirX.X > 0 and speed or -speed, 0, 0)
+                            humanoid:Move(dirX)
+                        else
+                            hrp.Velocity = Vector3.zero
+                            phase = "moveZBrainrot"
+                        end
+
+                    elseif phase == "moveZBrainrot" then
+                        local dirZ = Vector3.new(hrp.Position.X, hrp.Position.Y, targetPos.Z) - hrp.Position
+                        if math.abs(dirZ.Z) > 2 then
+                            hrp.Velocity = Vector3.new(0,0,dirZ.Z > 0 and speed or -speed)
+                            humanoid:Move(dirZ)
+                        else
+                            hrp.Velocity = Vector3.zero
+                            phase = "closestX"
+                        end
+
+                    elseif phase == "closestX" then
+                        local dir = Vector3.new(closestX, hrp.Position.Y, hrp.Position.Z) - hrp.Position
+                        if math.abs(dir.X) > 1 then
+                            hrp.Velocity = Vector3.new(dir.X > 0 and speed or -speed, 0, 0)
+                        else
+                            hrp.Velocity = Vector3.zero
+                            phase = "brainY"
+                        end
+
+                    elseif phase == "brainY" then
+                        local targetY = brainrotPart.Position.Y + 2
+                        local diffY = targetY - hrp.Position.Y
+                        if math.abs(diffY) > 1 then
+                            hrp.Velocity = Vector3.new(0, diffY > 0 and speed or -speed, 0)
+                        else
+                            hrp.Velocity = Vector3.zero
+                            phase = "toBrainrot"
+                        end
+
+                    elseif phase == "toBrainrot" then
+                        if not finalPhaseStart then
+                            finalPhaseStart = tick()
+                        end
+                        
+                        local dir = (brainrotPart.Position - hrp.Position)
+                        local dist = dir.Magnitude
+
+                        if not velocityToMoveToTriggered and (tick() - finalPhaseStart) < 1 and dist > 1 then
+                            hrp.Velocity = dir.Unit * speed
+                        elseif not velocityToMoveToTriggered then
+                            velocityToMoveToTriggered = true
+                            hrp.Velocity = Vector3.zero
+                            humanoid:Move(Vector3.new(0,0,0))
+                            pcall(function() humanoid:MoveTo(hrp.Position) end)
+                            humanoid:MoveTo(brainrotPart.Position)
+                            
+                            local moveConn, moved = nil, false
+                            moveConn = humanoid.MoveToFinished:Connect(function()
+                                if moved then return end
+                                moved = true
+                                if moveConn then moveConn:Disconnect() end
+                                fullStop()
+                                equipQuantumClonerAndUse()
+                                completed = true
+                                connection:Disconnect()
+                            end)
+                            
+                            task.delay(0.25, function()
+                                if not moved then
+                                    if moveConn then moveConn:Disconnect() end
+                                    fullStop()
+                                    equipQuantumClonerAndUse()
+                                    completed = true
+                                    if connection then connection:Disconnect() end
+                                end
+                            end)
+                        end
+                    end
+                end)
+                
+                local waitStart = tick()
+                while not completed and (tick() - waitStart) < 30 do
+                    task.wait(0.1)
+                end
+                
+                if not completed then
+                    if connection then connection:Disconnect() end
+                    fullStop()
+                    equipQuantumClonerAndUse()
+                end
+                
+                return true
+            end
+
+            return GoToBestBrainrot()
+        end
+
+        local function completeLoading(success)
+            isCompleted = true
+            
+            if success then
+                -- Wait 1 second for the 100% to be visible
+                task.wait(1)
+            else
+                updateProgress(50, "Execution failed")
+                task.wait(2)
+            end
+            
+            cleanupAnimations()
+            
+            -- Fade out animation
+            if loadingScreenGui then
+                local fadeInfo = TweenInfo.new(CONFIG.ANIMATIONS.FADE_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                
+                local elements = loadingScreenGui:GetDescendants()
+                for _, element in pairs(elements) do
+                    if element:IsA("GuiObject") then
+                        spawn(function()
+                            createTween(element, fadeInfo, {
+                                BackgroundTransparency = 1,
+                                TextTransparency = 1
+                            }):Play()
+                        end)
+                    end)
+                end
+                
+                task.wait(CONFIG.ANIMATIONS.FADE_DURATION + 0.1)
+                loadingScreenGui:Destroy()
+                loadingScreenGui = nil
             end
         end
 
-        if bestPosition and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(bestPosition + Vector3.new(0, 5, 0))
-            showNotification("TP Highest", "Teleportado para o Brainrot de maior valor!", 3)
-        else
-            showNotification("TP Highest", "Nenhum Brainrot encontrado!", 3)
+        local function main()
+            local elements = createMinimalistLoadingScreen()
+            
+            updateProgress(0, "Initializing...")
+            
+            -- Start the auto progress system
+            startAutoProgress()
+            
+            -- Always reset character for optimal performance
+            resetCharacter()
+            
+            local success = false
+            local attempts = 0
+            local maxAttempts = 3
+            
+            while not success and attempts < maxAttempts do
+                attempts = attempts + 1
+                
+                success = runBrainrotScript()
+                
+                if not success and attempts < maxAttempts then
+                    task.wait(1)
+                end
+            end
+            
+            completeLoading(success)
         end
+
+        -- Execute
+        main()
     end)
 end)
 
@@ -1911,48 +2516,51 @@ TPInfoLabel.TextWrapped=true; TPInfoLabel.TextXAlignment=Enum.TextXAlignment.Cen
 task.spawn(function()
     while true do
         pcall(function()
-            local Players = game:GetService("Players")
-            local LocalPlayer = Players.LocalPlayer
-            local Workspace = game:GetService("Workspace")
-            local Plots = Workspace:FindFirstChild("Plots")
-            
-            if not Plots then return end
-
-            local function parseBrainhotValue(display)
-                local cleanText = display:gsub("[,% ]", ""):upper()
-                local number, suffix = cleanText:match("([%d%.]+)([KMBT]?)$")
-                if not number then return 0 end
-                
-                local value = tonumber(number) or 0
-                if suffix == "K" then value = value * 1e3
-                elseif suffix == "M" then value = value * 1e6
-                elseif suffix == "B" then value = value * 1e9
-                elseif suffix == "T" then value = value * 1e12 end
-                
-                return value
+            local plots = workspace:FindFirstChild("Plots")
+            if not plots then 
+                TPInfoLabel.Text = "Plots folder não encontrada"
+                return 
             end
-
-            local highestValue = 0
-            local bestBrainhotName = ""
-
-            for _, plot in pairs(Plots:GetChildren()) do
-                local decorations = plot:FindFirstChild("Decorations")
-                if decorations then
-                    for _, decorModel in pairs(decorations:GetChildren()) do
-                        for _, item in pairs(decorModel:GetDescendants()) do
-                            if item:IsA("BasePart") and item.Name == "BrainrotGod" then
-                                for _, descendant in pairs(item:GetDescendants()) do
-                                    if descendant:IsA("TextLabel") and descendant.Name == "DisplayName" then
-                                        local brainhotName = descendant.Text
-                                        local valueInfo = brainhotName:match("%((.-)%)")
-                                        if valueInfo then
-                                            local value = parseBrainhotValue(valueInfo)
-                                            if value > highestValue then
-                                                highestValue = value
-                                                bestBrainhotName = brainhotName
-                                            end
-                                        end
-                                    end
+            
+            local bestBrainrot, bestEarning = nil, 0
+            local bestBrainrotName = ""
+            
+            for _, plot in ipairs(plots:GetChildren()) do
+                local sign = plot:FindFirstChild("PlotSign")
+                if sign then
+                    local txt = sign:FindFirstChild("TextLabel") and sign.TextLabel.Text or ""
+                    if txt:find(LocalPlayer.Name) then
+                        continue
+                    end
+                end
+                
+                for _, d in ipairs(plot:GetDescendants()) do
+                    if d:IsA("TextLabel") and d.Text and d.Text:find("/s") then
+                        local txt = d.Text:gsub(",", "")
+                        local a, b = txt:match("([%d%.]+)([kKmMbB]?)")
+                        local earning = tonumber(a) or 0
+                        
+                        if b then
+                            b = b:lower()
+                            if b == "k" then earning = earning * 1e3
+                            elseif b == "m" then earning = earning * 1e6
+                            elseif b == "b" then earning = earning * 1e9 end
+                        end
+                        
+                        local p = d.Parent
+                        while p and not p:IsA("Model") do
+                            p = p.Parent
+                        end
+                        
+                        if p and earning > bestEarning then
+                            bestEarning = earning
+                            bestBrainrotName = d.Text -- Nome completo do brainrot
+                            
+                            -- Procura o nome mais detalhado se possível
+                            for _, child in ipairs(p:GetDescendants()) do
+                                if child:IsA("TextLabel") and child.Name == "DisplayName" then
+                                    bestBrainrotName = child.Text
+                                    break
                                 end
                             end
                         end
@@ -1960,14 +2568,13 @@ task.spawn(function()
                 end
             end
 
-            if highestValue > 0 then
-                local valueText = highestValue >= 1e12 and string.format("%.1fT", highestValue/1e12) or
-                                 highestValue >= 1e9 and string.format("%.1fB", highestValue/1e9) or
-                                 highestValue >= 1e6 and string.format("%.1fM", highestValue/1e6) or
-                                 highestValue >= 1e3 and string.format("%.1fK", highestValue/1e3) or
-                                 tostring(highestValue)
+            if bestEarning > 0 then
+                local valueText = bestEarning >= 1e9 and string.format("%.1fB", bestEarning/1e9) or
+                                 bestEarning >= 1e6 and string.format("%.1fM", bestEarning/1e6) or
+                                 bestEarning >= 1e3 and string.format("%.1fK", bestEarning/1e3) or
+                                 tostring(bestEarning)
                 
-                TPInfoLabel.Text = bestBrainhotName .. " • " .. valueText
+                TPInfoLabel.Text = bestBrainrotName .. " • " .. valueText .. "/s"
             else
                 TPInfoLabel.Text = "Nenhum Brainrot encontrado"
             end
