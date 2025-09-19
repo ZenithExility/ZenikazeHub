@@ -892,43 +892,30 @@ local function getRarityFromObject(object)
     if not object or not object.Parent then 
         return nil 
     end
-
+    
     local success, result = pcall(function()
-        -- First check for rarity label
         for _, descendant in pairs(object:GetDescendants()) do
             if descendant.Name == "Rarity" and descendant:IsA("TextLabel") then
-                local text = descendant.Text:gsub("%s+", "")
-                return text
+                return descendant.Text:gsub("%s+", "")
             end
-        end
-
-        -- Check display name for keywords
-        for _, descendant in pairs(object:GetDescendants()) do
+            
             if descendant.Name == "DisplayName" and descendant:IsA("TextLabel") then
-                local displayText = descendant.Text:lower()
-                
-                -- More comprehensive detection
-                if displayText:find("brainrot god") or displayText:find("brainrotgod") then
-                    return "BrainrotGod"
-                elseif displayText:find("secret") then
-                    return "Secret"
+                local displayText = descendant.Text
+                for rarity, _ in pairs(raritySettings) do
+                    if displayText:find(rarity) then
+                        return rarity
+                    end
                 end
             end
         end
-
-        -- Check by color (purple for BrainrotGod)
-        if object:IsA("BasePart") then
-            local color = object.Color
-            -- Check for purple-ish colors that indicate BrainrotGod
-            if (color.R > 0.5 and color.B > 0.5 and color.G < 0.3) or
-               (math.abs(color.R - 180/255) < 0.1 and math.abs(color.G - 40/255) < 0.1 and math.abs(color.B - 180/255) < 0.1) then
-                return "BrainrotGod"
-            end
+        
+        if object:IsA("BasePart") and object.Color == Color3.fromRGB(180, 40, 180) then
+            return "BrainrotGod"
         end
-
+        
         return nil
     end)
-
+    
     return success and result or nil
 end
 
@@ -1118,72 +1105,49 @@ local function scanForPlayers()
 end
 
 local function scanForObjects()
-    local plotsFolder = Workspace:FindFirstChild("Plots")
+    local plotsFolder = game:GetService("Workspace"):FindFirstChild("Plots")
     if not plotsFolder then return end
-
-    local myChar = LocalPlayer.Character
-    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
-
-    pcall(function()
-        for _, plot in ipairs(plotsFolder:GetChildren()) do
+    
+    for _, plot in pairs(plotsFolder:GetChildren()) do
+        local isMyPlot = false
+        local plotSign = plot:FindFirstChild("PlotSign")
+        
+        if plotSign and plotSign:FindFirstChild("SurfaceGui") then
             pcall(function()
-                -- Skip if too far away for optimization
-                if myHRP then
-                    local plotPos = plot:FindFirstChild("Main") and plot.Main.Position
-                    if plotPos and (myHRP.Position - plotPos).Magnitude > 300 then
-                        return
-                    end
-                end
-
-                local isMyPlot = false
-                local plotSign = plot:FindFirstChild("PlotSign")
-
-                if plotSign and plotSign:FindFirstChild("SurfaceGui") then
-                    pcall(function()
-                        local text = plotSign.SurfaceGui.Frame.TextLabel.Text
-                        if text:find(LocalPlayer.Name) then
-                            isMyPlot = true
-                        end
-                    end)
-                end
-
-                if not isMyPlot then
-                    -- Search in Decorations
-                    local decorations = plot:FindFirstChild("Decorations")
-                    if decorations then
-                        for _, decorModel in ipairs(decorations:GetChildren()) do
-                            for _, descendant in ipairs(decorModel:GetDescendants()) do
-                                pcall(function()
-                                    if (descendant:IsA("BasePart") or descendant:IsA("MeshPart")) and not ESPObjects[descendant] then
-                                        local rarity = getRarityFromObject(descendant)
-
-                                        local shouldShow = false
-                                        if rarity == "BrainrotGod" and ESP_SETTINGS.BrainhotsGods then
-                                            shouldShow = true
-                                        elseif rarity == "Secret" and ESP_SETTINGS.BrainhotsSecrets then
-                                            shouldShow = true
-                                        end
-
-                                        if shouldShow then
-                                            local displayName = nil
-                                            for _, child in pairs(descendant:GetChildren()) do
-                                                if child.Name == "DisplayName" and child:IsA("TextLabel") then
-                                                    displayName = child.Text
-                                                    break
-                                                end
-                                            end
-
-                                            createESPBox(descendant, "Item", displayName or rarity, rarity)
-                                        end
-                                    end
-                                end)
-                            end
-                        end
-                    end
+                local text = plotSign.SurfaceGui.Frame.TextLabel.Text
+                if text:find(LocalPlayer.Name) then
+                    isMyPlot = true
                 end
             end)
         end
-    end)
+        
+        if not isMyPlot then
+            for _, descendant in pairs(plot:GetDescendants()) do
+                if (descendant:IsA("BasePart") or descendant:IsA("MeshPart")) and not ESPObjects[descendant] then
+                    local rarity = getRarityFromObject(descendant)
+                    
+                    local shouldShow = false
+                    if rarity == "BrainrotGod" and ESP_SETTINGS.BrainhotsGods then
+                        shouldShow = true
+                    elseif rarity == "Secret" and ESP_SETTINGS.BrainhotsSecrets then
+                        shouldShow = true
+                    end
+                    
+                    if shouldShow then
+                        local displayName = nil
+                        for _, child in pairs(descendant:GetDescendants()) do
+                            if child.Name == "DisplayName" and child:IsA("TextLabel") then
+                                displayName = child.Text
+                                break
+                            end
+                        end
+                        
+                        createESPBox(descendant, "Item", displayName or rarity, rarity)
+                    end
+                end
+            end
+        end
+    end
 end
 
 -- ======================== --
