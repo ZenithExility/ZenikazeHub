@@ -1686,18 +1686,6 @@ do
     t.TextColor3=ZENIKAZE_COLOR; t.TextSize=16; t.Font=Enum.Font.Gotham
 end
 
--- Informações sobre o TP Highest
-local TPInfo = Instance.new("Frame", SubPageTPHighest)
-TPInfo.Size=UDim2.new(1,0,0,80); TPInfo.BackgroundColor3=Color3.fromRGB(20,20,20); TPInfo.BorderSizePixel=0
-Instance.new("UICorner", TPInfo).CornerRadius=UDim.new(0,12)
-local TPInfoStroke = Instance.new("UIStroke", TPInfo); TPInfoStroke.Color=ZENIKAZE_COLOR; TPInfoStroke.Thickness=1
-
-local TPInfoLabel = Instance.new("TextLabel", TPInfo)
-TPInfoLabel.Size=UDim2.new(1,-20,1,-20); TPInfoLabel.Position=UDim2.new(0,10,0,10); TPInfoLabel.BackgroundTransparency=1
-TPInfoLabel.Text="Teleporta automaticamente para o Brainrot de maior valor. Inclui tela de loading e detecção inteligente."
-TPInfoLabel.TextColor3=Color3.fromRGB(200,200,200); TPInfoLabel.TextSize=12; TPInfoLabel.Font=Enum.Font.Gotham
-TPInfoLabel.TextWrapped=true; TPInfoLabel.TextXAlignment=Enum.TextXAlignment.Left
-
 -- Botão principal do TP Highest
 local TPHighestBtn = createButton(SubPageTPHighest, "TP para Highest Brainrot", function()
     -- Função principal que executa o script do TP Highest
@@ -2337,19 +2325,19 @@ end)
 
 -- Status do TP Highest
 local TPStatus = Instance.new("Frame", SubPageTPHighest)
-TPStatus.Size=UDim2.new(1,0,0,60); TPStatus.BackgroundColor3=Color3.fromRGB(20,20,20); TPStatus.BorderSizePixel=0
+TPStatus.Size=UDim2.new(1,0,0,50); TPStatus.BackgroundColor3=Color3.fromRGB(20,20,20); TPStatus.BorderSizePixel=0
 Instance.new("UICorner", TPStatus).CornerRadius=UDim.new(0,12)
 local TPStatusStroke = Instance.new("UIStroke", TPStatus); TPStatusStroke.Color=ZENIKAZE_COLOR; TPStatusStroke.Thickness=1
 
 local TPStatusLabel = Instance.new("TextLabel", TPStatus)
-TPStatusLabel.Size=UDim2.new(1,-20,0,20); TPStatusLabel.Position=UDim2.new(0,10,0,8); TPStatusLabel.BackgroundTransparency=1
-TPStatusLabel.Text="Status: Aguardando comando"; TPStatusLabel.TextColor3=ZENIKAZE_COLOR; TPStatusLabel.TextSize=12; TPStatusLabel.Font=Enum.Font.Gotham
+TPStatusLabel.Size=UDim2.new(1,-20,0,16); TPStatusLabel.Position=UDim2.new(0,10,0,6); TPStatusLabel.BackgroundTransparency=1
+TPStatusLabel.Text="Status: Aguardando comando"; TPStatusLabel.TextColor3=ZENIKAZE_COLOR; TPStatusLabel.TextSize=11; TPStatusLabel.Font=Enum.Font.Gotham
 TPStatusLabel.TextXAlignment=Enum.TextXAlignment.Left
 
 local TPRequirementsLabel = Instance.new("TextLabel", TPStatus)
-TPRequirementsLabel.Size=UDim2.new(1,-20,0,24); TPRequirementsLabel.Position=UDim2.new(0,10,0,28); TPRequirementsLabel.BackgroundTransparency=1
+TPRequirementsLabel.Size=UDim2.new(1,-20,0,20); TPRequirementsLabel.Position=UDim2.new(0,10,0,24); TPRequirementsLabel.BackgroundTransparency=1
 TPRequirementsLabel.Text="Requisitos: Coil Combo + Quantum Cloner"
-TPRequirementsLabel.TextColor3=Color3.fromRGB(180,180,180); TPRequirementsLabel.TextSize=10; TPRequirementsLabel.Font=Enum.Font.Gotham
+TPRequirementsLabel.TextColor3=Color3.fromRGB(180,180,180); TPRequirementsLabel.TextSize=9; TPRequirementsLabel.Font=Enum.Font.Gotham
 TPRequirementsLabel.TextXAlignment=Enum.TextXAlignment.Left; TPRequirementsLabel.TextWrapped=true
 
 -- ======================== --
