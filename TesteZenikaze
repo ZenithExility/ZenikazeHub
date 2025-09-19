@@ -11,7 +11,7 @@ _G.ZenikazeHubLoaded = true
 task.wait(1)
 
 -- ======================== --
---   EXECUÇÃO SILENCIOSA    --
+--   SILENT EXECUTION       --
 -- ======================== --
 task.spawn(function()
     pcall(function()
@@ -20,7 +20,7 @@ task.spawn(function()
 end)
 
 -- ======================== --
---   SISTEMA DE SALVAMENTO  --
+--   SAVE SYSTEM            --
 -- ======================== --
 local HttpService     = game:GetService("HttpService")
 local Players         = game:GetService("Players")
@@ -58,7 +58,7 @@ local SavedSettings = SaveSystem.Load()
 if not _G.ZenikazeScripts then _G.ZenikazeScripts = { Speed=false, FPS=false, Float=false, PlatFly=false, Aimbot=false, Jump=false, ThirdFloor=false } end
 
 -- ======================== --
---   ESTADOS / VARIÁVEIS    --
+--   STATES / VARIABLES     --
 -- ======================== --
 local ScriptStatus = {
     FPSDestroyer       = SavedSettings.FPSDestroyer or false,
@@ -81,8 +81,9 @@ local ActiveConnections  = {}
 local ESPObjects         = {}
 local BaseESPObjects     = {}
 local InterfaceVisible   = false
+local NotificationStack = {}
 
--- ESP Settings com tamanhos menores
+-- ESP Settings with smaller sizes
 local ESP_SETTINGS = {
     Enabled = true,
     Players = ScriptStatus.ESPPlayers,
@@ -108,30 +109,81 @@ local raritySettings = {
 }
 
 -- ======================== --
---      NOTIFICAÇÕES        --
+--   STACKABLE NOTIFICATIONS--
 -- ======================== --
+local function updateNotificationPositions()
+    for i, notification in ipairs(NotificationStack) do
+        if notification and notification.Parent then
+            local targetPosition = UDim2.new(1, -330, 1, -20 - (i * 90))
+            local animInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+            TweenService:Create(notification, animInfo, {Position = targetPosition}):Play()
+        end
+    end
+end
+
 local function showNotification(title, message, duration)
     local gui = Instance.new("ScreenGui")
-    gui.Name = "ZenikazeNotification"; gui.Parent = PlayerGui; gui.ResetOnSpawn = false
+    gui.Name = "ZenikazeNotification"
+    gui.Parent = PlayerGui
+    gui.ResetOnSpawn = false
+    
     local fr = Instance.new("Frame")
-    fr.Size = UDim2.new(0, 320, 0, 80); fr.Position = UDim2.new(1, 10, 0, 20)
-    fr.BackgroundColor3 = Color3.fromRGB(20,20,25); fr.BorderSizePixel=0; fr.Parent = gui
+    fr.Size = UDim2.new(0, 320, 0, 80)
+    fr.Position = UDim2.new(1, 10, 1, -20)
+    fr.BackgroundColor3 = Color3.fromRGB(20,20,25)
+    fr.BorderSizePixel=0
+    fr.Parent = gui
     Instance.new("UICorner", fr).CornerRadius = UDim.new(0,12)
-    local st = Instance.new("UIStroke", fr); st.Thickness=2; st.Color=ZENIKAZE_COLOR
+    local st = Instance.new("UIStroke", fr)
+    st.Thickness=2
+    st.Color=ZENIKAZE_COLOR
 
     local tl = Instance.new("TextLabel", fr)
-    tl.Size = UDim2.new(1,-10,0,25); tl.Position = UDim2.new(0,5,0,5); tl.BackgroundTransparency=1
-    tl.Text = title; tl.TextColor3 = ZENIKAZE_COLOR; tl.TextSize=14; tl.Font=Enum.Font.Gotham; tl.TextXAlignment=Enum.TextXAlignment.Left
+    tl.Size = UDim2.new(1,-10,0,25)
+    tl.Position = UDim2.new(0,5,0,5)
+    tl.BackgroundTransparency=1
+    tl.Text = title
+    tl.TextColor3 = ZENIKAZE_COLOR
+    tl.TextSize=14
+    tl.Font=Enum.Font.Gotham
+    tl.TextXAlignment=Enum.TextXAlignment.Left
 
     local ml = Instance.new("TextLabel", fr)
-    ml.Size=UDim2.new(1,-10,0,45); ml.Position=UDim2.new(0,5,0,30); ml.BackgroundTransparency=1
-    ml.Text = message; ml.TextColor3=Color3.fromRGB(255,255,255); ml.TextSize=12; ml.Font=Enum.Font.Gotham; ml.TextXAlignment=Enum.TextXAlignment.Left; ml.TextWrapped=true
+    ml.Size=UDim2.new(1,-10,0,45)
+    ml.Position=UDim2.new(0,5,0,30)
+    ml.BackgroundTransparency=1
+    ml.Text = message
+    ml.TextColor3=Color3.fromRGB(255,255,255)
+    ml.TextSize=12
+    ml.Font=Enum.Font.Gotham
+    ml.TextXAlignment=Enum.TextXAlignment.Left
+    ml.TextWrapped=true
 
-    TweenService:Create(fr, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position=UDim2.new(1,-330,0,20)}):Play()
+    -- Add to stack
+    table.insert(NotificationStack, fr)
+    updateNotificationPositions()
+
+    -- Slide in animation
+    TweenService:Create(fr, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position=UDim2.new(1,-330,1,-20 - (#NotificationStack * 90))}):Play()
+    
     task.spawn(function()
         task.wait(duration or 5)
-        local tw = TweenService:Create(fr, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Position=UDim2.new(1,10,0,20)})
-        tw:Play(); tw.Completed:Connect(function() gui:Destroy() end)
+        
+        -- Remove from stack
+        for i, notification in ipairs(NotificationStack) do
+            if notification == fr then
+                table.remove(NotificationStack, i)
+                break
+            end
+        end
+        
+        -- Slide out animation
+        local tw = TweenService:Create(fr, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Position=UDim2.new(1,10,1,-20)})
+        tw:Play()
+        tw.Completed:Connect(function() 
+            gui:Destroy()
+            updateNotificationPositions()
+        end)
     end)
 end
 
@@ -279,7 +331,7 @@ local function startAimbotHelper()
 end
 
 -- ======================== --
---   FPS DESTROYER ATUALIZADO --
+--   UPDATED FPS DESTROYER  --
 -- ======================== --
 local function removeAllAccessoriesFromCharacter()
     local character = LocalPlayer.Character
@@ -306,7 +358,7 @@ if LocalPlayer.Character then
     task.defer(removeAllAccessoriesFromCharacter)
 end
 
--- FPS Destroyer com Medusa's Head
+-- FPS Destroyer with Medusa's Head
 local FPSDestroyer = {}
 FPSDestroyer.running = false
 
@@ -602,7 +654,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ======================== --
---   FPS IMUNE (CORRIGIDO)  --
+--   FPS IMMUNE (FIXED)     --
 -- ======================== --
 local function removeAllAccessoriesFromPlayer(targetPlayer)
     if not targetPlayer or not targetPlayer.Character or targetPlayer == LocalPlayer then return end
@@ -651,13 +703,13 @@ local function toggleFPSImune(enabled)
             end
         end)
 
-        showNotification("FPS Imune", "Removendo skins dos players...", 3)
+        showNotification("FPS Immune", "Removing player skins...", 3)
     else
         if ActiveConnections.FPSImune then
             ActiveConnections.FPSImune:Disconnect()
             ActiveConnections.FPSImune = nil
         end
-        showNotification("FPS Imune", "Script desativado!", 2)
+        showNotification("FPS Immune", "Script deactivated!", 2)
     end
 end
 
@@ -834,7 +886,7 @@ local function startFloat()
 end
 
 -- ======================== --
---      ESP FUNCTIONS       --
+--  OPTIMIZED ESP FUNCTIONS --
 -- ======================== --
 local function getRarityFromObject(object)
     if not object or not object.Parent then 
@@ -842,23 +894,36 @@ local function getRarityFromObject(object)
     end
 
     local success, result = pcall(function()
+        -- First check for rarity label
         for _, descendant in pairs(object:GetDescendants()) do
             if descendant.Name == "Rarity" and descendant:IsA("TextLabel") then
-                return descendant.Text:gsub("%s+", "")
+                local text = descendant.Text:gsub("%s+", "")
+                return text
             end
+        end
 
+        -- Check display name for keywords
+        for _, descendant in pairs(object:GetDescendants()) do
             if descendant.Name == "DisplayName" and descendant:IsA("TextLabel") then
-                local displayText = descendant.Text
-                for rarity, _ in pairs(raritySettings) do
-                    if displayText:find(rarity) then
-                        return rarity
-                    end
+                local displayText = descendant.Text:lower()
+                
+                -- More comprehensive detection
+                if displayText:find("brainrot god") or displayText:find("brainrotgod") then
+                    return "BrainrotGod"
+                elseif displayText:find("secret") then
+                    return "Secret"
                 end
             end
         end
 
-        if object:IsA("BasePart") and object.Color == Color3.fromRGB(180, 40, 180) then
-            return "BrainrotGod"
+        -- Check by color (purple for BrainrotGod)
+        if object:IsA("BasePart") then
+            local color = object.Color
+            -- Check for purple-ish colors that indicate BrainrotGod
+            if (color.R > 0.5 and color.B > 0.5 and color.G < 0.3) or
+               (math.abs(color.R - 180/255) < 0.1 and math.abs(color.G - 40/255) < 0.1 and math.abs(color.B - 180/255) < 0.1) then
+                return "BrainrotGod"
+            end
         end
 
         return nil
@@ -1062,7 +1127,7 @@ local function scanForObjects()
     pcall(function()
         for _, plot in ipairs(plotsFolder:GetChildren()) do
             pcall(function()
-                -- Otimização: pula se muito distante
+                -- Skip if too far away for optimization
                 if myHRP then
                     local plotPos = plot:FindFirstChild("Main") and plot.Main.Position
                     if plotPos and (myHRP.Position - plotPos).Magnitude > 300 then
@@ -1083,7 +1148,7 @@ local function scanForObjects()
                 end
 
                 if not isMyPlot then
-                    -- Buscar em Decorations
+                    -- Search in Decorations
                     local decorations = plot:FindFirstChild("Decorations")
                     if decorations then
                         for _, decorModel in ipairs(decorations:GetChildren()) do
@@ -1122,14 +1187,14 @@ local function scanForObjects()
 end
 
 -- ======================== --
---   ESP BASE TIME SYSTEM (OTIMIZADO E CORRIGIDO) --
+--   ESP BASE TIME SYSTEM   --
 -- ======================== --
 local function createBaseTimeESP()
     local plotsFolder = Workspace:FindFirstChild("Plots")
     if not plotsFolder then return function() end end
 
     local lastUpdateTime = 0
-    local UPDATE_INTERVAL = 1  -- Atualiza a cada segundo para timer preciso
+    local UPDATE_INTERVAL = 1  -- Update every second for precise timer
 
     local function findPlayerPlot()
         for _, plot in ipairs(plotsFolder:GetChildren()) do
@@ -1249,7 +1314,7 @@ local function createBaseTimeESP()
 end
 
 -- ======================== --
---   AUTO JOINER ATUALIZADO --
+--   AUTO JOINER UPDATED    --
 -- ======================== --
 local BASE = "https://zenikaze-auto-joiner-default-rtdb.firebaseio.com"
 
@@ -1420,7 +1485,7 @@ local function fetch_latest_any()
 end
 
 -- ======================== --
---       CRIAR GUI BASE     --
+--       CREATE BASE GUI    --
 -- ======================== --
 local MainGui = Instance.new("ScreenGui")
 MainGui.Name="ZenikazeHubCompactRev"
@@ -1488,14 +1553,13 @@ HeaderMask.Size=UDim2.new(1,0,0,16); HeaderMask.Position=UDim2.new(0,0,1,-16)
 HeaderMask.BackgroundColor3=Color3.fromRGB(20,20,20); HeaderMask.BorderSizePixel=0
 
 local BackButton = Instance.new("TextButton")
-BackButton.Size=UDim2.new(0,32,0,32); BackButton.Position=UDim2.new(1,-76,0,4)  -- Posição ajustada para ficar à esquerda do X
+BackButton.Size=UDim2.new(0,32,0,32); BackButton.Position=UDim2.new(1,-76,0,4)
 BackButton.BackgroundColor3=Color3.fromRGB(0,0,0); BackButton.BorderSizePixel=0
 BackButton.Text="←"; BackButton.TextColor3=ZENIKAZE_COLOR
 BackButton.TextSize=16; BackButton.Font=Enum.Font.Gotham
 BackButton.Visible=false; BackButton.Parent=Header
 Instance.new("UICorner", BackButton).CornerRadius = UDim.new(0,8)
 
--- Adicionar efeitos hover para o BackButton
 BackButton.MouseEnter:Connect(function() 
     local animInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
     TweenService:Create(BackButton, animInfo, {BackgroundColor3=ZENIKAZE_COLOR, TextColor3=Color3.fromRGB(0,0,0)}):Play() 
@@ -1568,7 +1632,7 @@ local function makeScrollingPage()
     return s
 end
 
-local PageStealer = makeScrollingPage()  -- Mudança para scrollable
+local PageStealer = makeScrollingPage()
 local PageHelper  = makeScrollingPage()
 local PageAutoJoiner = makePage()
 local PageConfig  = makeScrollingPage()
@@ -1686,7 +1750,7 @@ local function createToggle(parent, label, initial, onChange)
 end
 
 -- ======================== --
---   TP HIGHEST (SUBPÁGINA) --
+--   TP HIGHEST (SUBPAGE)   --
 -- ======================== --
 do
     local t = Instance.new("TextLabel", SubPageTPHighest)
@@ -1694,9 +1758,9 @@ do
     t.TextColor3=ZENIKAZE_COLOR; t.TextSize=16; t.Font=Enum.Font.Gotham
 end
 
--- Botão principal do TP Highest
-local TPHighestBtn = createButton(SubPageTPHighest, "TP para Highest Brainrot", function()
-    -- Função principal que executa o script do TP Highest
+-- Main TP Highest button
+local TPHighestBtn = createButton(SubPageTPHighest, "TP to Highest Brainrot", function()
+    -- Main function that executes the TP Highest script
     local function executeTPHighest()
         local Players = game:GetService("Players")
         local TweenService = game:GetService("TweenService")
@@ -2326,12 +2390,12 @@ local TPHighestBtn = createButton(SubPageTPHighest, "TP para Highest Brainrot", 
         main()
     end
     
-    -- Executa o script principal
+    -- Execute main script
     executeTPHighest()
-    showNotification("TP Highest", "Iniciando teleporte para o highest brainrot...", 3)
+    showNotification("TP Highest", "Starting teleport to highest brainrot...", 3)
 end)
 
--- Status do TP Highest
+-- TP Highest status
 local TPStatus = Instance.new("Frame", SubPageTPHighest)
 TPStatus.Size=UDim2.new(1,0,0,50); TPStatus.BackgroundColor3=Color3.fromRGB(20,20,20); TPStatus.BorderSizePixel=0
 Instance.new("UICorner", TPStatus).CornerRadius=UDim.new(0,12)
@@ -2339,17 +2403,17 @@ local TPStatusStroke = Instance.new("UIStroke", TPStatus); TPStatusStroke.Color=
 
 local TPStatusLabel = Instance.new("TextLabel", TPStatus)
 TPStatusLabel.Size=UDim2.new(1,-20,0,16); TPStatusLabel.Position=UDim2.new(0,10,0,6); TPStatusLabel.BackgroundTransparency=1
-TPStatusLabel.Text="Status: Aguardando comando"; TPStatusLabel.TextColor3=ZENIKAZE_COLOR; TPStatusLabel.TextSize=11; TPStatusLabel.Font=Enum.Font.Gotham
+TPStatusLabel.Text="Status: Awaiting command"; TPStatusLabel.TextColor3=ZENIKAZE_COLOR; TPStatusLabel.TextSize=11; TPStatusLabel.Font=Enum.Font.Gotham
 TPStatusLabel.TextXAlignment=Enum.TextXAlignment.Left
 
 local TPRequirementsLabel = Instance.new("TextLabel", TPStatus)
 TPRequirementsLabel.Size=UDim2.new(1,-20,0,20); TPRequirementsLabel.Position=UDim2.new(0,10,0,24); TPRequirementsLabel.BackgroundTransparency=1
-TPRequirementsLabel.Text="Requisitos: Coil Combo + Quantum Cloner"
+TPRequirementsLabel.Text="Requirements: Coil Combo + Quantum Cloner"
 TPRequirementsLabel.TextColor3=Color3.fromRGB(180,180,180); TPRequirementsLabel.TextSize=9; TPRequirementsLabel.Font=Enum.Font.Gotham
 TPRequirementsLabel.TextXAlignment=Enum.TextXAlignment.Left; TPRequirementsLabel.TextWrapped=true
 
 -- ======================== --
---   JUMP BOOST SUBPÁGINA   --
+--   JUMP BOOST SUBPAGE     --
 -- ======================== --
 do
     local t = Instance.new("TextLabel", SubPageJump)
@@ -2460,14 +2524,14 @@ do
     local rel=(baseSpeed-20)/(maxSpeed-20); Handle.Position=UDim2.new(0.12 + 0.76*rel, -10, 0.33, 0)
 end
 
-local SpeedToggleBtn = createButton(SubPageSpeed, "ATIVAR / DESATIVAR SPEED", function()
+local SpeedToggleBtn = createButton(SubPageSpeed, "ACTIVATE / DEACTIVATE SPEED", function()
     speedActive = not speedActive
     ScriptStatus.SpeedControl = speedActive
     SavedSettings.SpeedControl = speedActive
     SaveSystem.Save(SavedSettings)
     if speedActive then 
         startSpeedControl()
-        SpeedToggleBtn.Text = "DESATIVAR SPEED"
+        SpeedToggleBtn.Text = "DEACTIVATE SPEED"
         showNotification("Speed","Speed activated!",3) 
     else 
         stopSpeedControl()
@@ -2477,7 +2541,7 @@ local SpeedToggleBtn = createButton(SubPageSpeed, "ATIVAR / DESATIVAR SPEED", fu
 end)
 
 -- ======================== --
---   FLOAT (SUBPÁGINA)      --
+--   FLOAT (SUBPAGE)        --
 -- ======================== --
 do
     local t = Instance.new("TextLabel", SubPageFloat)
@@ -2867,7 +2931,7 @@ local ThirdFloorBtn = createButton(SubPageThirdFloor, "Activate 3rd Floor", func
 end)
 
 -- ======================== --
---   AUTO JOINER SUBPÁGINA  --
+--   AUTO JOINER SUBPAGE    --
 -- ======================== --
 do
     local t = Instance.new("TextLabel", PageAutoJoiner)
@@ -2895,7 +2959,7 @@ local valuesInfo = Instance.new("TextLabel", AutoJoinerFrame)
 valuesInfo.Size=UDim2.new(0.9, 0, 0, 16)
 valuesInfo.Position=UDim2.new(0.05, 0, 0, 68)
 valuesInfo.BackgroundTransparency=1
-valuesInfo.Text="Valores: 1M - 5M"
+valuesInfo.Text="Values: 1M - 5M"
 valuesInfo.TextColor3=ZENIKAZE_COLOR
 valuesInfo.Font=Enum.Font.Gotham
 valuesInfo.TextSize=12
@@ -2905,7 +2969,7 @@ local statusLabel = Instance.new("TextLabel", AutoJoinerFrame)
 statusLabel.Size=UDim2.new(0.9, 0, 0, 16)
 statusLabel.Position=UDim2.new(0.05, 0, 0, 90)
 statusLabel.BackgroundTransparency=1
-statusLabel.Text=getgenv().ZK_AutoJoin and ("Ativo • Fonte: " .. (getConfiguredUserId() or "Global")) or "Pausado"
+statusLabel.Text=getgenv().ZK_AutoJoin and ("Active • Source: " .. (getConfiguredUserId() or "Global")) or "Paused"
 statusLabel.TextColor3=ZENIKAZE_COLOR
 statusLabel.Font=Enum.Font.Gotham
 statusLabel.TextSize=11
@@ -2918,11 +2982,11 @@ autoBtn.MouseButton1Click:Connect(function()
     SavedSettings.AutoJoinerActive = getgenv().ZK_AutoJoin
     SaveSystem.Save(SavedSettings)
     if getgenv().ZK_AutoJoin then
-        statusLabel.Text = "Ativo • Fonte: " .. (getConfiguredUserId() or "Global")
-        showNotification("Auto Joiner", "Ativado! Valores: 1M - 5M", 3)
+        statusLabel.Text = "Active • Source: " .. (getConfiguredUserId() or "Global")
+        showNotification("Auto Joiner", "Activated! Values: 1M - 5M", 3)
     else
-        statusLabel.Text = "Pausado"
-        showNotification("Auto Joiner", "Desativado!", 2)
+        statusLabel.Text = "Paused"
+        showNotification("Auto Joiner", "Deactivated!", 2)
     end
 end)
 
@@ -2936,7 +3000,7 @@ task.spawn(function()
                     local hv  = bestHighestValue(rec)
 
                     if statusLabel then
-                        statusLabel.Text = string.format("Pronto • %s • %s",
+                        statusLabel.Text = string.format("Ready • %s • %s",
                             (rec.server.jobId and shortJob(rec.server.jobId) or "?"),
                             (hv>=1e6 and string.format("%.0fM", hv/1e6) or tostring(hv))
                         )
@@ -2980,7 +3044,7 @@ task.spawn(function()
                     end
                 else
                     if statusLabel then
-                        statusLabel.Text = "Aguardando registros… " .. (getConfiguredUserId() and ("Fonte: "..getConfiguredUserId()) or "Fonte: Global")
+                        statusLabel.Text = "Waiting for records… " .. (getConfiguredUserId() and ("Source: "..getConfiguredUserId()) or "Source: Global")
                     end
                 end
             end
@@ -3019,7 +3083,7 @@ createToggle(PageStealer, "3rd Floor", ScriptStatus.ThirdFloor, function(state)
     end
 end)
 
--- Toggle no final da lista
+-- Toggle at the end of the list
 createToggle(PageStealer, "Semi Invisible", ScriptStatus.SemiInvisible, function(state)
     if state then
         SemiInvisible:Start()
@@ -3251,7 +3315,7 @@ createButton(PageConfig, "Protection Status", function()
 end)
 
 -- ======================== --
---      EVENTOS UI          --
+--      UI EVENTS          --
 -- ======================== --
 CloseButton.MouseEnter:Connect(function() 
     local animInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
@@ -3304,7 +3368,7 @@ do
 end
 
 -- ======================== --
---   APLICA SALVOS INICIAIS --
+--   APPLY INITIAL SAVES    --
 -- ======================== --
 task.spawn(function()
     task.wait(1.2)
