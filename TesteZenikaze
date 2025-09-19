@@ -1,4 +1,4 @@
--- Zenikaze Hub - Versão Final [Jump Boost + ESP Menor + Auto Joiner Atualizado + FPS Fix + 3rd Floor]
+-- Zenikaze Hub - Versão Final [Jump Boost + ESP Menor + Auto Joiner Atualizado + FPS Fix + 3rd Floor + TP Highest]
 task.wait(1)
 
 -- ======================== --
@@ -124,6 +124,148 @@ local function showNotification(title, message, duration)
         local tw = TweenService:Create(fr, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Position=UDim2.new(1,10,1,-90)})
         tw:Play(); tw.Completed:Connect(function() gui:Destroy() end)
     end)
+end
+
+-- ======================== --
+--   TP HIGHEST SYSTEM      --
+-- ======================== --
+local TPHighest = {}
+
+function TPHighest.scan()
+    local plotsFolder = Workspace:FindFirstChild("Plots")
+    if not plotsFolder then 
+        showNotification("TP Highest", "Plots folder não encontrada!", 3)
+        return nil 
+    end
+
+    local bestValue = 0
+    local bestPosition = nil
+    local bestPlotName = nil
+    local foundItems = 0
+
+    for _, plot in ipairs(plotsFolder:GetChildren()) do
+        pcall(function()
+            local decorations = plot:FindFirstChild("Decorations")
+            if decorations then
+                for _, decorModel in ipairs(decorations:GetChildren()) do
+                    for _, item in ipairs(decorModel:GetDescendants()) do
+                        pcall(function()
+                            if (item:IsA("BasePart") or item:IsA("MeshPart")) then
+                                -- Procura por valor no objeto
+                                for _, child in ipairs(item:GetDescendants()) do
+                                    if child:IsA("TextLabel") and (child.Name:lower():find("value") or child.Name:lower():find("worth")) then
+                                        local text = child.Text or ""
+                                        local value = TPHighest.parseValue(text)
+                                        if value and value > bestValue then
+                                            bestValue = value
+                                            bestPosition = item.Position
+                                            bestPlotName = plot.Name
+                                            foundItems = foundItems + 1
+                                        end
+                                    end
+                                end
+                                
+                                -- Verifica se é um item raro
+                                local rarity = TPHighest.getRarityFromObject(item)
+                                if rarity == "BrainrotGod" or rarity == "Secret" then
+                                    local estimatedValue = rarity == "BrainrotGod" and 1000000 or 500000
+                                    if estimatedValue > bestValue then
+                                        bestValue = estimatedValue
+                                        bestPosition = item.Position
+                                        bestPlotName = plot.Name
+                                        foundItems = foundItems + 1
+                                    end
+                                end
+                            end
+                        end)
+                    end
+                end
+            end
+        end)
+    end
+
+    return bestPosition, bestValue, bestPlotName, foundItems
+end
+
+function TPHighest.parseValue(text)
+    if not text or type(text) ~= "string" then return nil end
+    
+    local cleanText = text:gsub("[,%$]", ""):lower()
+    local number, suffix = cleanText:match("([%d%.]+)%s*([kmb]?)")
+    
+    if not number then return nil end
+    
+    local value = tonumber(number)
+    if not value then return nil end
+    
+    if suffix == "k" then
+        value = value * 1000
+    elseif suffix == "m" then
+        value = value * 1000000
+    elseif suffix == "b" then
+        value = value * 1000000000
+    end
+    
+    return value
+end
+
+function TPHighest.getRarityFromObject(object)
+    if not object or not object.Parent then return nil end
+    
+    local success, result = pcall(function()
+        for _, descendant in pairs(object:GetDescendants()) do
+            if descendant.Name == "Rarity" and descendant:IsA("TextLabel") then
+                return descendant.Text:gsub("%s+", "")
+            end
+            
+            if descendant.Name == "DisplayName" and descendant:IsA("TextLabel") then
+                local displayText = descendant.Text
+                if displayText:find("BrainrotGod") then return "BrainrotGod" end
+                if displayText:find("Secret") then return "Secret" end
+            end
+        end
+        
+        if object:IsA("BasePart") and object.Color == Color3.fromRGB(180, 40, 180) then
+            return "BrainrotGod"
+        end
+        
+        return nil
+    end)
+    
+    return success and result or nil
+end
+
+function TPHighest.teleportToHighest()
+    local character = LocalPlayer.Character
+    if not character then 
+        showNotification("TP Highest", "Personagem não encontrado!", 3)
+        return 
+    end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then 
+        showNotification("TP Highest", "HumanoidRootPart não encontrado!", 3)
+        return 
+    end
+
+    showNotification("TP Highest", "Escaneando bases...", 2)
+    
+    local bestPosition, bestValue, plotName, foundItems = TPHighest.scan()
+    
+    if not bestPosition then
+        showNotification("TP Highest", "Nenhum item de valor encontrado!", 3)
+        return
+    end
+
+    -- Teleporta para a posição + offset para ficar próximo
+    local targetPosition = bestPosition + Vector3.new(0, 5, 5)
+    humanoidRootPart.CFrame = CFrame.new(targetPosition)
+    
+    local valueText = bestValue >= 1000000 and string.format("%.1fM", bestValue/1000000) or 
+                     bestValue >= 1000 and string.format("%.1fK", bestValue/1000) or 
+                     tostring(bestValue)
+    
+    showNotification("TP Highest", string.format("Teleportado para %s\nValor: %s (%d itens)", plotName or "Plot", valueText, foundItems), 4)
 end
 
 -- ======================== --
@@ -371,33 +513,8 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ======================== --
---   OTIMIZAÇÕES DE PERFORMANCE E CORREÇÃO DE ERROS --
+--   SEMI INVISIBLE SYSTEM  --
 -- ======================== --
-
--- Adicionar verificações de segurança para ReplicatedStorage
-local function safeFireRemote(remotePath, ...)
-    pcall(function()
-        local remote = ReplicatedStorage
-        for _, path in ipairs(remotePath) do
-            if remote then
-                remote = remote:FindFirstChild(path)
-            else
-                return false
-            end
-        end
-        if remote and remote.FireServer then
-            remote:FireServer(...)
-            return true
-        end
-    end)
-    return false
-end
-
--- Função otimizada para evitar erros de nil value
-local function safeGetChild(parent, childName)
-    if not parent then return nil end
-    return parent:FindFirstChild(childName)
-end
 local SemiInvisible = {}
 SemiInvisible.active = false
 SemiInvisible.animTrack = nil
@@ -479,6 +596,10 @@ LocalPlayer.CharacterAdded:Connect(function()
         SemiInvisible:Stop()
     end
 end)
+
+-- ======================== --
+--   THIRD FLOOR SYSTEM     --
+-- ======================== --
 local ThirdFloor = {}
 ThirdFloor.platform = nil
 ThirdFloor.active = false
@@ -1021,15 +1142,13 @@ local function updateESP()
     local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return end
     
-    local objectsToRemove = {}
-    
     for object, espData in pairs(ESPObjects) do
+        if not object or not object.Parent then
+            removeESP(object)
+            continue
+        end
+        
         pcall(function()
-            if not object or not object.Parent then
-                table.insert(objectsToRemove, object)
-                return
-            end
-            
             local objectPos = nil
             
             if espData.type == "Player" then
@@ -1041,12 +1160,6 @@ local function updateESP()
             
             if objectPos and espData.billboard then
                 local distance = (myHRP.Position - objectPos).Magnitude
-                
-                -- Otimização: remove ESP muito distante para economizar memória
-                if distance > ESP_SETTINGS.MaxDistance * 1.5 then
-                    table.insert(objectsToRemove, object)
-                    return
-                end
                 
                 if distance <= ESP_SETTINGS.MaxDistance then
                     espData.billboard.Enabled = true
@@ -1060,11 +1173,6 @@ local function updateESP()
                 end
             end
         end)
-    end
-    
-    -- Remove objetos órfãos para liberar memória
-    for _, object in ipairs(objectsToRemove) do
-        removeESP(object)
     end
 end
 
@@ -1715,6 +1823,60 @@ local function createToggle(parent, label, initial, onChange)
 end
 
 -- ======================== --
+--   TP HIGHEST SUBPÁGINA   --
+-- ======================== --
+do
+    local t = Instance.new("TextLabel", SubPageTPHighest)
+    t.Size=UDim2.new(1,0,0,20); t.BackgroundTransparency=1; t.Text="TP HIGHEST"
+    t.TextColor3=ZENIKAZE_COLOR; t.TextSize=16; t.Font=Enum.Font.Gotham
+end
+
+-- Frame de informações
+local TPHighestInfo = Instance.new("Frame", SubPageTPHighest)
+TPHighestInfo.Size=UDim2.new(1,0,0,80); TPHighestInfo.BackgroundColor3=Color3.fromRGB(20,20,20); TPHighestInfo.BorderSizePixel=0
+Instance.new("UICorner", TPHighestInfo).CornerRadius=UDim.new(0,12)
+local TPInfoStroke = Instance.new("UIStroke", TPHighestInfo); TPInfoStroke.Color=ZENIKAZE_COLOR; TPInfoStroke.Thickness=1
+
+local TPInfoLabel = Instance.new("TextLabel", TPHighestInfo)
+TPInfoLabel.Size=UDim2.new(1,-20,1,-20); TPInfoLabel.Position=UDim2.new(0,10,0,10); TPInfoLabel.BackgroundTransparency=1
+TPInfoLabel.Text="Teleporta para a base com o maior valor de item. Escaneia todas as bases visíveis e encontra o item mais valioso automaticamente."
+TPInfoLabel.TextColor3=Color3.fromRGB(200,200,200); TPInfoLabel.TextSize=12; TPInfoLabel.Font=Enum.Font.Gotham
+TPInfoLabel.TextWrapped=true; TPInfoLabel.TextXAlignment=Enum.TextXAlignment.Left
+
+-- Botão principal de teleporte
+local TPHighestBtn = createButton(SubPageTPHighest, "Teleportar para Highest", function()
+    TPHighest.teleportToHighest()
+end)
+
+-- Frame de estatísticas
+local TPStatsFrame = Instance.new("Frame", SubPageTPHighest)
+TPStatsFrame.Size=UDim2.new(1,0,0,60); TPStatsFrame.BackgroundColor3=Color3.fromRGB(20,20,20); TPStatsFrame.BorderSizePixel=0
+Instance.new("UICorner", TPStatsFrame).CornerRadius=UDim.new(0,12)
+local TPStatsStroke = Instance.new("UIStroke", TPStatsFrame); TPStatsStroke.Color=ZENIKAZE_COLOR; TPStatsStroke.Thickness=1
+
+local TPStatsLabel = Instance.new("TextLabel", TPStatsFrame)
+TPStatsLabel.Size=UDim2.new(1,-20,1,-20); TPStatsLabel.Position=UDim2.new(0,10,0,10); TPStatsLabel.BackgroundTransparency=1
+TPStatsLabel.Text="Clique em 'Scan' para ver estatísticas detalhadas dos itens encontrados nas bases próximas."
+TPStatsLabel.TextColor3=ZENIKAZE_COLOR; TPStatsLabel.TextSize=11; TPStatsLabel.Font=Enum.Font.Gotham
+TPStatsLabel.TextWrapped=true; TPStatsLabel.TextXAlignment=Enum.TextXAlignment.Left
+
+-- Botão de scan para estatísticas
+local TPScanBtn = createButton(SubPageTPHighest, "Scan Bases", function()
+    local bestPosition, bestValue, plotName, foundItems = TPHighest.scan()
+    
+    if not bestPosition then
+        TPStatsLabel.Text = "Nenhum item de valor encontrado nas bases próximas."
+    else
+        local valueText = bestValue >= 1000000 and string.format("%.1fM", bestValue/1000000) or 
+                         bestValue >= 1000 and string.format("%.1fK", bestValue/1000) or 
+                         tostring(bestValue)
+        
+        TPStatsLabel.Text = string.format("Melhor: %s\nValor: %s\nItens encontrados: %d", 
+            plotName or "Plot desconhecido", valueText, foundItems)
+    end
+end)
+
+-- ======================== --
 --   JUMP BOOST SUBPÁGINA   --
 -- ======================== --
 do
@@ -2212,141 +2374,11 @@ local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Playe
     end)
     
     showNotification("Control Player", "Interface carregada com tema Zenikaze!", 3)
-end)1Click:Connect(function() aj.Enabled = false end)
-
-            local content = ensure("Frame", "Content", main)
-            content.Size = UDim2.new(1, -32, 1, -56)
-            content.Position = UDim2.new(0, 16, 0, 48)
-            content.BackgroundTransparency = 1
-
-            local layout = content:FindFirstChildOfClass("UIListLayout")
-            if not layout then
-                layout = Instance.new("UIListLayout", content)
-                layout.SortOrder = Enum.SortOrder.LayoutOrder
-                layout.Padding   = UDim.new(0, 8)
-            end
-
-            local btnControlOrig, btnShootOrig
-            local order = 1
-            local function styleButton(btn)
-                btn.Parent = content
-                btn.LayoutOrder = order
-                order = order + 1
-                btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-                btn.BorderSizePixel  = 0
-                btn.Size             = UDim2.new(1, 0, 0, 48)
-                btn.AutoButtonColor  = true
-                btn.Font             = Enum.Font.GothamBold
-                btn.TextSize         = 18
-                btn.TextColor3       = Color3.fromRGB(255, 255, 0)
-                if not btn:FindFirstChildOfClass("UICorner") then
-                    local uc = Instance.new("UICorner", btn)
-                    uc.CornerRadius = UDim.new(0, 12)
-                end
-                local s = btn:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke", btn)
-                s.Thickness, s.Color = 1, ZENIKAZE_COLOR
-            end
-
-            for _, d in ipairs(main:GetDescendants()) do
-                if d:IsA("TextButton") and d.Name ~= "CloseButton" then
-                    local low = string.lower(d.Text or d.Name or "")
-                    if low:find("control") then
-                        btnControlOrig = btnControlOrig or d
-                    elseif low:find("shoot") or low:find("nearest") then
-                        btnShootOrig = btnShootOrig or d
-                    end
-                    styleButton(d)
-                end
-            end
-
-            local function clickBtn(btn)
-                if not btn then return end
-                local ok = false
-                if firesignal then ok = pcall(function() firesignal(btn.MouseButton1Click) end) end
-                if not ok then pcall(function() btn:Activate() end) end
-            end
-
-            if not content:FindFirstChild("MainButton") then
-                local mainButton = Instance.new("TextButton")
-                mainButton.Name = "MainButton"
-                mainButton.Text = "Control Player"
-                mainButton.Parent = content
-                mainButton.LayoutOrder = 1
-                mainButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-                mainButton.BorderSizePixel  = 0
-                mainButton.Size             = UDim2.new(1, 0, 0, 48)
-                mainButton.AutoButtonColor  = true
-                mainButton.Font             = Enum.Font.GothamBold
-                mainButton.TextSize         = 18
-                mainButton.TextColor3       = Color3.fromRGB(255, 255, 0)
-                local uc = Instance.new("UICorner", mainButton); uc.CornerRadius = UDim.new(0, 12)
-                local st = Instance.new("UIStroke", mainButton); st.Thickness = 1; st.Color = Color3.fromRGB(255, 255, 0)
-
-                local function park(btn)
-                    if not btn then return end
-                    btn.Visible = false
-                    btn.Position = UDim2.new(2, 0, 2, 0)
-                    btn.ZIndex = -1
-                    btn.AutoButtonColor = false
-                end
-                park(btnShootOrig)
-                park(btnControlOrig)
-
-                mainButton.MouseButton1Click:Connect(function()
-                    clickBtn(btnShootOrig)
-                    task.delay(2, function()
-                        clickBtn(btnControlOrig)
-                    end)
-                end)
-            end
-
-            local nameLbl = content:FindFirstChild("NameLabel")
-            if not nameLbl then
-                nameLbl = Instance.new("TextLabel")
-                nameLbl.Name = "NameLabel"
-                nameLbl.LayoutOrder = 99
-                nameLbl.Size = UDim2.new(1, 0, 0, 36)
-                nameLbl.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-                nameLbl.BorderSizePixel = 0
-                nameLbl.Text = "Seu nome"
-                nameLbl.TextColor3 = Color3.fromRGB(255, 255, 0)
-                nameLbl.TextSize = 18
-                nameLbl.Font = Enum.Font.Gotham
-                nameLbl.Parent = content
-                local uc2 = Instance.new("UICorner", nameLbl); uc2.CornerRadius = UDim.new(0, 10)
-                local s2 = Instance.new("UIStroke", nameLbl);  s2.Thickness = 1; s2.Color = Color3.fromRGB(255, 255, 0)
-            end
-
-            makeDraggable(header, main)
-            aj:SetAttribute("ZenikazeSkinned", true)
-        end
-
-        local function trySkin()
-            local aj = PlayerGui:FindFirstChild("AjjanGui") or PlayerGui:FindFirstChild("Ajjan's GUI")
-            if aj then applyZenikazeSkin(aj) end
-        end
-        trySkin()
-        PlayerGui.ChildAdded:Connect(function(c)
-            if c.Name == "AjjanGui" or c.Name == "Ajjan's GUI" then
-                applyZenikazeSkin(c)
-            end
-        end)
-
-        while task.wait(0.02) do
-            local aj = PlayerGui:FindFirstChild("AjjanGui") or PlayerGui:FindFirstChild("Ajjan's GUI")
-            if aj and aj:GetAttribute("ZenikazeSkinned") then
-                local main = aj:FindFirstChild("MainFrame") or aj:FindFirstChild("Frame") or aj:FindFirstChildOfClass("Frame")
-                local content = main and main:FindFirstChild("Content")
-                local lbl = content and content:FindFirstChild("NameLabel")
-                if lbl and lbl:IsA("TextLabel") then
-                    lbl.Text = "ZenithExility"
-                end
-            end
-        end
-    end)
-    
-    showNotification("Control Player", "Interface carregada com tema Zenikaze!", 3)
 end)
+
+-- ======================== --
+--   THIRD FLOOR (SUB)      --
+-- ======================== --
 do
     local t = Instance.new("TextLabel", SubPageThirdFloor)
     t.Size=UDim2.new(1,0,0,20); t.BackgroundTransparency=1; t.Text="3RD FLOOR"
@@ -2849,42 +2881,22 @@ task.spawn(function()
         end)
     end
     
-    showNotification("🔥 Zenikaze Hub", "Versão Final carregada com 3rd Floor!", 3)
+    showNotification("🔥 Zenikaze Hub", "Versão Final carregada com TP Highest!", 3)
 end)
 
 task.spawn(function()
     local lastScanTime = 0
-    local lastCleanupTime = 0
-    local SCAN_INTERVAL = 5  -- Aumentado para 5 segundos
-    local CLEANUP_INTERVAL = 10  -- Limpeza a cada 10 segundos
+    local SCAN_INTERVAL = 3  -- Escaneia apenas a cada 3 segundos
     
     while true do
         local currentTime = tick()
         
         pcall(function()
-            -- Limpeza periódica de objetos órfãos
-            if currentTime - lastCleanupTime > CLEANUP_INTERVAL then
-                for obj, espData in pairs(ESPObjects) do
-                    if not obj or not obj.Parent then
-                        removeESP(obj)
-                    end
-                end
-                
-                for name, esp in pairs(BaseESPObjects) do
-                    if not esp or not esp.Parent then
-                        BaseESPObjects[name] = nil
-                    end
-                end
-                
-                lastCleanupTime = currentTime
-            end
-            
-            -- ESP de players (mais frequente)
             if ESP_SETTINGS.Enabled and ESP_SETTINGS.Players then
                 scanForPlayers()
             end
             
-            -- Scan de objetos menos frequente
+            -- Só escaneia objetos ocasionalmente para reduzir lag
             if currentTime - lastScanTime > SCAN_INTERVAL then
                 if ESP_SETTINGS.Enabled and (ESP_SETTINGS.BrainhotsGods or ESP_SETTINGS.BrainhotsSecrets) then
                     scanForObjects()
@@ -2892,10 +2904,9 @@ task.spawn(function()
                 lastScanTime = currentTime
             end
             
-            -- Update ESP com verificação de distância
             updateESP()
         end)
-        task.wait(2)  -- Mantido em 2 segundos para balancear performance
+        task.wait(1)  -- Reduzido de 2 para 1 segundo para melhor responsividade do ESP de players
     end
 end)
 
