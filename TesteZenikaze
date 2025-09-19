@@ -1833,8 +1833,9 @@ end
 
 -- Botão principal de teleporte
 local TPHighestBtn = createButton(SubPageTPHighest, "TP Now!", function()
-    -- Código fornecido pelo usuário para TP Highest
-    pcall(function()
+    -- Versão otimizada e com tratamento de erros
+    task.spawn(function()
+        pcall(function()
         -- Services and Core Initialization
         local Players = game:GetService("Players")
         local TweenService = game:GetService("TweenService")
