@@ -1,4 +1,13 @@
--- Zenikaze Hub - Versão Final [Jump Boost + ESP Menor + Auto Joiner Atualizado + FPS Fix + 3rd Floor + TP Highest]
+-- Zenikaze Hub - Final Version [Jump Boost + ESP + Auto Joiner + FPS Fix + 3rd Floor + TP Highest]
+
+-- Protection against multiple executions
+if _G.ZenikazeHubLoaded then
+    if PlayerGui:FindFirstChild("ZenikazeHubCompactRev") then
+        PlayerGui.ZenikazeHubCompactRev:Destroy()
+    end
+end
+_G.ZenikazeHubLoaded = true
+
 task.wait(1)
 
 -- ======================== --
@@ -1214,13 +1223,16 @@ local function createBaseTimeESP()
                             local label = frame and frame:FindFirstChild("Label")
                             local isUnlocked = (timeLabel.Text == "0s")
                             if label then
-                                label.Text = isUnlocked and "Unlocked" or timeLabel.Text
-                                if plot.Name == playerPlot then
-                                    label.TextColor3 = Color3.fromRGB(0, 255, 0)
-                                elseif isUnlocked then
+                                if isUnlocked then
+                                    label.Text = "Unlocked"
                                     label.TextColor3 = ZENIKAZE_COLOR
                                 else
-                                    label.TextColor3 = Color3.fromRGB(255, 100, 100)
+                                    label.Text = "Locked: " .. timeLabel.Text
+                                    label.TextColor3 = ZENIKAZE_COLOR
+                                end
+                                
+                                if plot.Name == playerPlot then
+                                    label.TextColor3 = Color3.fromRGB(0, 255, 0)
                                 end
                             end
                         end
@@ -1501,7 +1513,7 @@ Title.TextXAlignment=Enum.TextXAlignment.Left; Title.Parent=Header
 
 local SubTitle = Instance.new("TextLabel")
 SubTitle.Size=UDim2.new(1,-80,0,12); SubTitle.Position=UDim2.new(0,16,0,26)
-SubTitle.BackgroundTransparency=1; SubTitle.Text="- Feito por ZenithExility"
+SubTitle.BackgroundTransparency=1; SubTitle.Text="- Made by ZenithExility"
 SubTitle.TextColor3=Color3.fromRGB(180,180,180); SubTitle.TextSize=8; SubTitle.Font=Enum.Font.Gotham
 SubTitle.TextXAlignment=Enum.TextXAlignment.Left; SubTitle.Parent=Header
 
@@ -2982,24 +2994,28 @@ end)
 -- ======================== --
 createButton(PageStealer, "Float Steal", function()
     BackButton.Visible=true; showOnly(SubPageFloat)
+    showNotification("Float Steal", "Opening Float Steal menu", 2)
 end)
 createButton(PageStealer, "FPS Destroyer", function()
     BackButton.Visible=true; showOnly(SubPageFPS)
+    showNotification("FPS Destroyer", "Opening FPS Destroyer menu", 2)
 end)
 createButton(PageStealer, "TP Highest", function()
     BackButton.Visible=true; showOnly(SubPageTPHighest)
+    showNotification("TP Highest", "Opening TP Highest menu", 2)
 end)
 createButton(PageStealer, "Control Player", function()
     BackButton.Visible=true; showOnly(SubPageControlPlayer)
+    showNotification("Control Player", "Opening Control Player menu", 2)
 end)
 
 createToggle(PageStealer, "3rd Floor", ScriptStatus.ThirdFloor, function(state)
     if state then
         ThirdFloor:Start()
-        showNotification("3rd Floor", "Ativado! Plataforma criada!", 3)
+        showNotification("3rd Floor", "3rd Floor activated! Platform created!", 3)
     else
         ThirdFloor:Stop()
-        showNotification("3rd Floor", "Desativado! Plataforma removida!", 2)
+        showNotification("3rd Floor", "3rd Floor deactivated! Platform removed!", 2)
     end
 end)
 
@@ -3007,10 +3023,10 @@ end)
 createToggle(PageStealer, "Semi Invisible", ScriptStatus.SemiInvisible, function(state)
     if state then
         SemiInvisible:Start()
-        showNotification("Semi Invisible", "Ativado por 30 segundos!", 3)
+        showNotification("Semi Invisible", "Semi Invisible activated for 30 seconds!", 3)
     else
         SemiInvisible:Stop()
-        showNotification("Semi Invisible", "Desativado!", 2)
+        showNotification("Semi Invisible", "Semi Invisible deactivated!", 2)
     end
 end)
 
@@ -3019,10 +3035,12 @@ end)
 -- ======================== --
 createButton(PageHelper, "Speed", function()
     BackButton.Visible=true; showOnly(SubPageSpeed)
+    showNotification("Speed", "Opening Speed menu", 2)
 end)
 
 createButton(PageHelper, "Jump Boost", function()
     BackButton.Visible=true; showOnly(SubPageJump)
+    showNotification("Jump Boost", "Opening Jump Boost menu", 2)
 end)
 
 createToggle(PageHelper, "Aimbot Helper", ScriptStatus.AimbotActive, function(state)
@@ -3031,10 +3049,10 @@ createToggle(PageHelper, "Aimbot Helper", ScriptStatus.AimbotActive, function(st
     SaveSystem.Save(SavedSettings)
     if state then
         startAimbotHelper()
-        showNotification("Aimbot Helper", "Ativado! Use Q, clique ou toque", 3)
+        showNotification("Aimbot Helper", "Aimbot activated! Use Q, click or tap", 3)
     else
         stopAimbotHelper()
-        showNotification("Aimbot Helper", "Desativado!", 2)
+        showNotification("Aimbot Helper", "Aimbot deactivated!", 2)
     end
 end)
 
@@ -3048,14 +3066,14 @@ createToggle(PageHelper, "ESP Players", ScriptStatus.ESPPlayers, function(state)
         if not ActiveConnections.ESPUpdate then
             ActiveConnections.ESPUpdate = RunService.RenderStepped:Connect(updateESP)
         end
-        showNotification("ESP Players", "Ativado!", 2)
+        showNotification("ESP Players", "Player ESP activated!", 2)
     else
         for player, _ in pairs(ESPObjects) do
             if ESPObjects[player] and ESPObjects[player].type == "Player" then
                 removeESP(player)
             end
         end
-        showNotification("ESP Players", "Desativado!", 2)
+        showNotification("ESP Players", "Player ESP deactivated!", 2)
     end
 end)
 
@@ -3070,9 +3088,9 @@ createToggle(PageHelper, "ESP Brainrot Gods", ScriptStatus.ESPBrainhotsGods, fun
                 removeESP(object)
             end
         end
-        showNotification("ESP Brainrot Gods", "Desativado!", 2)
+        showNotification("ESP Brainrot Gods", "Brainrot Gods ESP deactivated!", 2)
     else
-        showNotification("ESP Brainrot Gods", "Ativado!", 2)
+        showNotification("ESP Brainrot Gods", "Brainrot Gods ESP activated!", 2)
     end
 end)
 
@@ -3087,14 +3105,19 @@ createToggle(PageHelper, "ESP Brainrot Secrets", ScriptStatus.ESPBrainhotsSecret
                 removeESP(object)
             end
         end
-        showNotification("ESP Brainrot Secrets", "Desativado!", 2)
+        showNotification("ESP Brainrot Secrets", "Brainrot Secrets ESP deactivated!", 2)
     else
-        showNotification("ESP Brainrot Secrets", "Ativado!", 2)
+        showNotification("ESP Brainrot Secrets", "Brainrot Secrets ESP activated!", 2)
     end
 end)
 
-createToggle(PageHelper, "FPS Imune", ScriptStatus.FPSImune, function(state)
+createToggle(PageHelper, "FPS Immune", ScriptStatus.FPSImune, function(state)
     toggleFPSImune(state)
+    if state then
+        showNotification("FPS Immune", "FPS Immune activated! Removing player skins...", 3)
+    else
+        showNotification("FPS Immune", "FPS Immune deactivated!", 2)
+    end
 end)
 
 createToggle(PageHelper, "Base Opacity", ScriptStatus.BasesOpacity, function(state)
@@ -3123,7 +3146,7 @@ createToggle(PageHelper, "Base Opacity", ScriptStatus.BasesOpacity, function(sta
                 task.wait(2)
             end
         end)
-        showNotification("Base Opacity", "Transparência das bases ativada!", 3)
+        showNotification("Base Opacity", "Base transparency activated!", 3)
     else
         if ActiveConnections.BaseOpacity then task.cancel(ActiveConnections.BaseOpacity); ActiveConnections.BaseOpacity=nil end
         pcall(function()
@@ -3141,7 +3164,7 @@ createToggle(PageHelper, "Base Opacity", ScriptStatus.BasesOpacity, function(sta
                 end
             end
         end)
-        showNotification("Base Opacity", "Transparência das bases desativada!", 2)
+        showNotification("Base Opacity", "Base transparency deactivated!", 2)
     end
 end)
 
@@ -3152,7 +3175,7 @@ createToggle(PageHelper, "ESP Base Time", ScriptStatus.BaseESP, function(state)
     if state then
         local updateFunc = createBaseTimeESP()
         ActiveConnections.BaseESP = RunService.RenderStepped:Connect(updateFunc)
-        showNotification("ESP Base Time", "Ativado!", 2)
+        showNotification("ESP Base Time", "Base Timer ESP activated!", 2)
     else
         if ActiveConnections.BaseESP then
             ActiveConnections.BaseESP:Disconnect()
@@ -3162,17 +3185,17 @@ createToggle(PageHelper, "ESP Base Time", ScriptStatus.BaseESP, function(state)
             esp:Destroy()
         end
         BaseESPObjects = {}
-        showNotification("ESP Base Time", "Desativado!", 2)
+        showNotification("ESP Base Time", "Base Timer ESP deactivated!", 2)
     end
 end)
 
 -- ======================== --
---   CONFIG (SCROLLÁVEL)    --
+--   CONFIG (SCROLLABLE)    --
 -- ======================== --
 createButton(PageConfig, "Rejoin Server", function()
-    showNotification("🔄 Rejoin","Reconectando...",2); TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    showNotification("🔄 Rejoin","Reconnecting...",2); TeleportService:Teleport(game.PlaceId, LocalPlayer)
 end)
-createButton(PageConfig, "Server Hop (auto vago)", function()
+createButton(PageConfig, "Server Hop (auto empty)", function()
     task.spawn(function()
         pcall(function()
             local resp = game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100")
@@ -3184,7 +3207,7 @@ createButton(PageConfig, "Server Hop (auto vago)", function()
             end
         end)
     end)
-    showNotification("🔄 Server Hop","Procurando servidor...",3)
+    showNotification("🔄 Server Hop","Looking for server...",3)
 end)
 
 local JobWrap = Instance.new("Frame", PageConfig)
@@ -3198,33 +3221,33 @@ JLbl.Text="Job ID"; JLbl.TextColor3=Color3.fromRGB(255,255,255); JLbl.TextSize=1
 local JobIdBox=Instance.new("TextBox", JobWrap)
 JobIdBox.Size=UDim2.new(1,-20,0,22); JobIdBox.Position=UDim2.new(0,10,0,26)
 JobIdBox.BackgroundColor3=Color3.fromRGB(35,35,45); JobIdBox.BorderSizePixel=0; JobIdBox.Text=""
-JobIdBox.PlaceholderText="Digite o Job ID..."; JobIdBox.TextColor3=Color3.fromRGB(255,255,255); JobIdBox.PlaceholderColor3=Color3.fromRGB(120,120,120)
+JobIdBox.PlaceholderText="Enter Job ID..."; JobIdBox.TextColor3=Color3.fromRGB(255,255,255); JobIdBox.PlaceholderColor3=Color3.fromRGB(120,120,120)
 JobIdBox.TextSize=12; JobIdBox.Font=Enum.Font.Gotham; JobIdBox.ClearTextOnFocus=false
 local jCorner = Instance.new("UICorner")
 jCorner.CornerRadius = UDim.new(0,8)
 jCorner.Parent = JobIdBox
 
-createButton(PageConfig, "Join por Job ID", function()
+createButton(PageConfig, "Join by Job ID", function()
     local id = JobIdBox.Text or ""
-    if id=="" then showNotification("❌ Erro","Insira um Job ID válido!",3) return end
+    if id=="" then showNotification("❌ Error","Enter a valid Job ID!",3) return end
     pcall(function() TeleportService:TeleportToPlaceInstance(game.PlaceId, id, LocalPlayer) end)
-    showNotification("🔄 Job ID","Conectando...",3)
+    showNotification("🔄 Job ID","Connecting...",3)
 end)
-createButton(PageConfig, "Copiar Job ID atual", function()
+createButton(PageConfig, "Copy Current Job ID", function()
     local jid = game.JobId
-    if setclipboard then setclipboard(jid); showNotification("✅ Copiado","Job ID no clipboard!",3)
+    if setclipboard then setclipboard(jid); showNotification("✅ Copied","Job ID copied to clipboard!",3)
     else showNotification("📋 Job ID", "Job ID: "..jid, 6) end
 end)
-createButton(PageConfig, "Join Discord (copiar link)", function()
+createButton(PageConfig, "Join Discord (copy link)", function()
     local link="https://discord.gg/3Mzg7c7XGX"
-    if setclipboard then setclipboard(link); showNotification("✅ Discord","Link copiado!",3)
+    if setclipboard then setclipboard(link); showNotification("✅ Discord","Link copied!",3)
     else showNotification("🔗 Discord", link, 8) end
 end)
 createButton(PageConfig, "Clear Settings", function()
-    SavedSettings = {}; SaveSystem.Save({}); showNotification("🗑️ Settings","Configurações limpas!",3)
+    SavedSettings = {}; SaveSystem.Save({}); showNotification("🗑️ Settings","Settings cleared!",3)
 end)
 createButton(PageConfig, "Protection Status", function()
-    showNotification("🔒 Proteção", "Teleports manuais: PERMITIDOS\nTeleports automáticos: BLOQUEADOS",5)
+    showNotification("🔒 Protection", "Manual teleports: ALLOWED\nAutomatic teleports: BLOCKED",5)
 end)
 
 -- ======================== --
@@ -3244,14 +3267,40 @@ ToggleButton.MouseButton1Click:Connect(function()
     InterfaceVisible = not InterfaceVisible
     MainFrame.Visible = InterfaceVisible
     if InterfaceVisible then
-        -- Animação de zoom in (abertura)
+        -- Hide all elements initially for animation
+        for _, element in pairs({TabBar, Content, Header}) do
+            element.BackgroundTransparency = 1
+            for _, child in pairs(element:GetDescendants()) do
+                if child:IsA("GuiObject") then
+                    child.BackgroundTransparency = 1
+                    child.TextTransparency = 1
+                end
+            end
+        end
+        
+        -- Start zoom in animation
         MainFrame.Size = UDim2.new(0,10,0,10)
         MainFrame.Position = UDim2.new(0.5,-5,0.5,-5)
         local animInfo = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
         local sizeTarget = UDim2.new(0,320,0,240)
         local posTarget = UDim2.new(0.5,-160,0.5,-120)
         
-        TweenService:Create(MainFrame, animInfo, {Size=sizeTarget, Position=posTarget}):Play()
+        local mainTween = TweenService:Create(MainFrame, animInfo, {Size=sizeTarget, Position=posTarget})
+        mainTween:Play()
+        
+        -- Animate elements back after main animation
+        mainTween.Completed:Connect(function()
+            local fadeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            for _, element in pairs({TabBar, Content, Header}) do
+                TweenService:Create(element, fadeInfo, {BackgroundTransparency = element.Name == "Header" and 0 or 1}):Play()
+                for _, child in pairs(element:GetDescendants()) do
+                    if child:IsA("GuiObject") then
+                        local targetBg = child:GetAttribute("OriginalBgTransparency") or (child.BackgroundColor3 == Color3.fromRGB(0,0,0) and 0 or child.BackgroundTransparency)
+                        TweenService:Create(child, fadeInfo, {BackgroundTransparency = targetBg, TextTransparency = 0}):Play()
+                    end
+                end
+            end
+        end)
     end
 end)
 
@@ -3343,45 +3392,46 @@ task.spawn(function()
         end)
     end
 
-    showNotification("🔥 Zenikaze Hub", "Versão Final carregada com TP Highest!", 3)
+    showNotification("⚡ Zenikaze Hub", "Script loaded successfully! Use with moderation! ⚡", 3)
 end)
 
 task.spawn(function()
-    local lastScanTime = 0
-    local SCAN_INTERVAL = 2  -- Escaneia a cada 2 segundos
-
+    local lastESPScan = 0
+    local lastBaseScan = 0
+    local ESP_INTERVAL = 3  -- ESP scan every 3 seconds
+    local BASE_INTERVAL = 1 -- Base timer every 1 second
+    
     while true do
         local currentTime = tick()
-
+        
         pcall(function()
-            if ESP_SETTINGS.Enabled and ESP_SETTINGS.Players then
-                scanForPlayers()
-            end
-
-            -- Escanear objetos ESP
-            if currentTime - lastScanTime > SCAN_INTERVAL then
-                if ESP_SETTINGS.Enabled and (ESP_SETTINGS.BrainhotsGods or ESP_SETTINGS.BrainhotsSecrets) then
+            -- Update ESP every frame for smooth distance updates
+            updateESP()
+            
+            -- Scan for new ESP objects less frequently
+            if currentTime - lastESPScan >= ESP_INTERVAL then
+                if ESP_SETTINGS.Players then
+                    scanForPlayers()
+                end
+                
+                if ESP_SETTINGS.BrainhotsGods or ESP_SETTINGS.BrainhotsSecrets then
                     scanForObjects()
                 end
-                lastScanTime = currentTime
+                
+                lastESPScan = currentTime
             end
-
-            updateESP()
-        end)
-        task.wait(1)
-    end
-end)
-
--- Loop separado para Base ESP
-task.spawn(function()
-    local baseESPUpdate = createBaseTimeESP()
-    while true do
-        pcall(function()
-            if ScriptStatus.BaseESP then
-                baseESPUpdate()
+            
+            -- Update base ESP more frequently for timer accuracy
+            if currentTime - lastBaseScan >= BASE_INTERVAL then
+                if ScriptStatus.BaseESP then
+                    local baseESPUpdate = createBaseTimeESP()
+                    baseESPUpdate()
+                end
+                lastBaseScan = currentTime
             end
         end)
-        task.wait(1)
+        
+        task.wait(0.1) -- 10 FPS update rate for smooth experience
     end
 end)
 
