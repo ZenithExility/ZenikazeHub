@@ -1384,10 +1384,10 @@ ToggleButton.Size=UDim2.new(0,64,0,64)
 ToggleButton.Position=UDim2.new(0,20,0.5,-32)
 ToggleButton.BackgroundColor3 = Color3.fromRGB(0,0,0)
 ToggleButton.BorderSizePixel=0
-ToggleButton.Image = "rbxthumb://type=Asset&id=102099988884223&w=420&h=420"
+ToggleButton.Image = "rbxthumb://type=Asset&id=122962552617784&w=420&h=420"
 ToggleButton.ScaleType = Enum.ScaleType.Fit
 ToggleButton.Parent = MainGui
-Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(1,0)
+Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0,16)  -- Squircle
 local TBStroke = Instance.new("UIStroke", ToggleButton)
 TBStroke.Color = ZENIKAZE_COLOR; TBStroke.Thickness=2
 
@@ -1439,12 +1439,22 @@ HeaderMask.Size=UDim2.new(1,0,0,16); HeaderMask.Position=UDim2.new(0,0,1,-16)
 HeaderMask.BackgroundColor3=Color3.fromRGB(20,20,20); HeaderMask.BorderSizePixel=0
 
 local BackButton = Instance.new("TextButton")
-BackButton.Size=UDim2.new(0,32,0,32); BackButton.Position=UDim2.new(0,4,0,4)
+BackButton.Size=UDim2.new(0,32,0,32); BackButton.Position=UDim2.new(1,-76,0,4)  -- Posição ajustada para ficar à esquerda do X
 BackButton.BackgroundColor3=Color3.fromRGB(0,0,0); BackButton.BorderSizePixel=0
 BackButton.Text="←"; BackButton.TextColor3=ZENIKAZE_COLOR
 BackButton.TextSize=16; BackButton.Font=Enum.Font.Gotham
 BackButton.Visible=false; BackButton.Parent=Header
 Instance.new("UICorner", BackButton).CornerRadius = UDim.new(0,8)
+
+-- Adicionar efeitos hover para o BackButton
+BackButton.MouseEnter:Connect(function() 
+    local animInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    TweenService:Create(BackButton, animInfo, {BackgroundColor3=ZENIKAZE_COLOR, TextColor3=Color3.fromRGB(0,0,0)}):Play() 
+end)
+BackButton.MouseLeave:Connect(function() 
+    local animInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+    TweenService:Create(BackButton, animInfo, {BackgroundColor3=Color3.fromRGB(0,0,0), TextColor3=ZENIKAZE_COLOR}):Play() 
+end)
 
 local Title = Instance.new("TextLabel")
 Title.Size=UDim2.new(1,-80,1,0); Title.Position=UDim2.new(0,16,0,0)
@@ -1509,7 +1519,7 @@ local function makeScrollingPage()
     return s
 end
 
-local PageStealer = makePage()
+local PageStealer = makeScrollingPage()  -- Mudança para scrollable
 local PageHelper  = makeScrollingPage()
 local PageAutoJoiner = makePage()
 local PageConfig  = makeScrollingPage()
@@ -2266,7 +2276,11 @@ end)
 createButton(PageStealer, "3rd Floor", function()
     BackButton.Visible=true; showOnly(SubPageThirdFloor)
 end)
+createButton(PageStealer, "Control Player", function()
+    BackButton.Visible=true; showOnly(SubPageControlPlayer)
+end)
 
+-- Toggle no final da lista
 createToggle(PageStealer, "Semi Invisible", ScriptStatus.SemiInvisible, function(state)
     if state then
         SemiInvisible:Start()
@@ -2275,10 +2289,6 @@ createToggle(PageStealer, "Semi Invisible", ScriptStatus.SemiInvisible, function
         SemiInvisible:Stop()
         showNotification("Semi Invisible", "Desativado!", 2)
     end
-end)
-
-createButton(PageStealer, "Control Player", function()
-    BackButton.Visible=true; showOnly(SubPageControlPlayer)
 end)
 
 -- ======================== --
