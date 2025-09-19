@@ -1531,10 +1531,11 @@ local SubPageThirdFloor = makePage()
 local SubPageJump     = makePage()
 local SubPageSemiInvis = makePage()
 local SubPageControlPlayer = makePage()
+local SubPageTPHighest = makePage()
 
 local currentHome = "Stealer"
 local function showOnly(frame)
-    for _,f in ipairs({PageStealer,PageHelper,PageAutoJoiner,PageConfig,SubPageSpeed,SubPageFloat,SubPageFPS,SubPageThirdFloor,SubPageJump,SubPageSemiInvis,SubPageControlPlayer}) do f.Visible=(f==frame) end
+    for _,f in ipairs({PageStealer,PageHelper,PageAutoJoiner,PageConfig,SubPageSpeed,SubPageFloat,SubPageFPS,SubPageThirdFloor,SubPageJump,SubPageSemiInvis,SubPageControlPlayer,SubPageTPHighest}) do f.Visible=(f==frame) end
 end
 local function activateTab(btn, homeFrame)
     if _G.__ActiveTabButton and _G.__ActiveTabButton ~= btn then
@@ -1562,7 +1563,7 @@ local function createList(parent)
     end
 end
 createList(PageStealer); createList(PageHelper); createList(PageConfig)
-createList(SubPageSpeed); createList(SubPageFloat); createList(SubPageFPS); createList(SubPageThirdFloor); createList(SubPageJump); createList(SubPageSemiInvis); createList(SubPageControlPlayer)
+createList(SubPageSpeed); createList(SubPageFloat); createList(SubPageFPS); createList(SubPageThirdFloor); createList(SubPageJump); createList(SubPageSemiInvis); createList(SubPageControlPlayer); createList(SubPageTPHighest)
 
 local function createButton(parent, text, callback)
     local b=Instance.new("TextButton")
@@ -2273,11 +2274,21 @@ end)
 createButton(PageStealer, "FPS Destroyer", function()
     BackButton.Visible=true; showOnly(SubPageFPS)
 end)
-createButton(PageStealer, "3rd Floor", function()
-    BackButton.Visible=true; showOnly(SubPageThirdFloor)
+createButton(PageStealer, "TP Highest", function()
+    BackButton.Visible=true; showOnly(SubPageTPHighest)
 end)
 createButton(PageStealer, "Control Player", function()
     BackButton.Visible=true; showOnly(SubPageControlPlayer)
+end)
+
+createToggle(PageStealer, "3rd Floor", ScriptStatus.ThirdFloor, function(state)
+    if state then
+        ThirdFloor:Start()
+        showNotification("3rd Floor", "Ativado! Plataforma criada!", 3)
+    else
+        ThirdFloor:Stop()
+        showNotification("3rd Floor", "Desativado! Plataforma removida!", 2)
+    end
 end)
 
 -- Toggle no final da lista
