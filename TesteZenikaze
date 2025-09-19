@@ -1873,6 +1873,17 @@ do
     t.TextColor3=ZENIKAZE_COLOR; t.TextSize=16; t.Font=Enum.Font.Gotham
 end
 
+local ControlInfo = Instance.new("Frame", SubPageControlPlayer)
+ControlInfo.Size=UDim2.new(1,0,0,80); ControlInfo.BackgroundColor3=Color3.fromRGB(20,20,20); ControlInfo.BorderSizePixel=0
+Instance.new("UICorner", ControlInfo).CornerRadius=UDim.new(0,12)
+local ControlInfoStroke = Instance.new("UIStroke", ControlInfo); ControlInfoStroke.Color=ZENIKAZE_COLOR; ControlInfoStroke.Thickness=1
+
+local ControlInfoLabel = Instance.new("TextLabel", ControlInfo)
+ControlInfoLabel.Size=UDim2.new(1,-20,1,-20); ControlInfoLabel.Position=UDim2.new(0,10,0,10); ControlInfoLabel.BackgroundTransparency=1
+ControlInfoLabel.Text="Abre uma GUI para controlar outros players próximos. Interface otimizada com tema Zenikaze."
+ControlInfoLabel.TextColor3=Color3.fromRGB(200,200,200); ControlInfoLabel.TextSize=12; ControlInfoLabel.Font=Enum.Font.Gotham
+ControlInfoLabel.TextWrapped=true; ControlInfoLabel.TextXAlignment=Enum.TextXAlignment.Left
+
 local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Player", function()
     task.spawn(function()
         local url = "https://raw.githubusercontent.com/Obama9282921781/Rjdhdidjdj/refs/heads/main/Protected_4809522785054226.lua.txt"
@@ -2055,13 +2066,147 @@ local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Playe
                 btn.AutoButtonColor  = true
                 btn.Font             = Enum.Font.GothamBold
                 btn.TextSize         = 18
+                btn.TextColor3       = ZENIKAZE_COLOR
+                if not btn:FindFirstChildOfClass("UICorner") then
+                    local uc = Instance.new("UICorner", btn)
+                    uc.CornerRadius = UDim.new(0, 12)
+                end
+                local s = btn:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke", btn)
+                s.Thickness, s.Color = 1, ZENIKAZE_COLOR
+            end
+
+            for _, d in ipairs(main:GetDescendants()) do
+                if d:IsA("TextButton") and d.Name ~= "CloseButton" then
+                    local low = string.lower(d.Text or d.Name or "")
+                    if low:find("control") then
+                        btnControlOrig = btnControlOrig or d
+                    elseif low:find("shoot") or low:find("nearest") then
+                        btnShootOrig = btnShootOrig or d
+                    end
+                    styleButton(d)
+                end
+            end
+
+            local function clickBtn(btn)
+                if not btn then return end
+                local ok = false
+                if firesignal then ok = pcall(function() firesignal(btn.MouseButton1Click) end) end
+                if not ok then pcall(function() btn:Activate() end) end
+            end
+
+            if not content:FindFirstChild("MainButton") then
+                local mainButton = Instance.new("TextButton")
+                mainButton.Name = "MainButton"
+                mainButton.Text = "Control Player"
+                mainButton.Parent = content
+                mainButton.LayoutOrder = 1
+                mainButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                mainButton.BorderSizePixel  = 0
+                mainButton.Size             = UDim2.new(1, 0, 0, 48)
+                mainButton.AutoButtonColor  = true
+                mainButton.Font             = Enum.Font.GothamBold
+                mainButton.TextSize         = 18
+                mainButton.TextColor3 = ZENIKAZE_COLOR
+                local uc = Instance.new("UICorner", mainButton); uc.CornerRadius = UDim.new(0, 12)
+                local st = Instance.new("UIStroke", mainButton); st.Thickness = 1; st.Color = ZENIKAZE_COLOR
+
+                local function park(btn)
+                    if not btn then return end
+                    btn.Visible = false
+                    btn.Position = UDim2.new(2, 0, 2, 0)
+                    btn.ZIndex = -1
+                    btn.AutoButtonColor = false
+                end
+                park(btnShootOrig)
+                park(btnControlOrig)
+
+                mainButton.MouseButton1Click:Connect(function()
+                    clickBtn(btnShootOrig)
+                    task.delay(2, function()
+                        clickBtn(btnControlOrig)
+                    end)
+                end)
+            end
+
+            local nameLbl = content:FindFirstChild("NameLabel")
+            if not nameLbl then
+                nameLbl = Instance.new("TextLabel")
+                nameLbl.Name = "NameLabel"
+                nameLbl.LayoutOrder = 99
+                nameLbl.Size = UDim2.new(1, 0, 0, 36)
+                nameLbl.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                nameLbl.BorderSizePixel = 0
+                nameLbl.Text = "ZenithExility"
+                nameLbl.TextColor3 = ZENIKAZE_COLOR
+                nameLbl.TextSize = 18
+                nameLbl.Font = Enum.Font.Gotham
+                nameLbl.Parent = content
+                local uc2 = Instance.new("UICorner", nameLbl); uc2.CornerRadius = UDim.new(0, 10)
+                local s2 = Instance.new("UIStroke", nameLbl);  s2.Thickness = 1; s2.Color = ZENIKAZE_COLOR
+            end
+
+            makeDraggable(header, main)
+            aj:SetAttribute("ZenikazeSkinned", true)
+        end
+
+        local function trySkin()
+            local aj = PlayerGui:FindFirstChild("AjjanGui") or PlayerGui:FindFirstChild("Ajjan's GUI")
+            if aj then applyZenikazeSkin(aj) end
+        end
+        trySkin()
+        PlayerGui.ChildAdded:Connect(function(c)
+            if c.Name == "AjjanGui" or c.Name == "Ajjan's GUI" then
+                applyZenikazeSkin(c)
+            end
+        end)
+
+        while task.wait(0.02) do
+            local aj = PlayerGui:FindFirstChild("AjjanGui") or PlayerGui:FindFirstChild("Ajjan's GUI")
+            if aj and aj:GetAttribute("ZenikazeSkinned") then
+                local main = aj:FindFirstChild("MainFrame") or aj:FindFirstChild("Frame") or aj:FindFirstChildOfClass("Frame")
+                local content = main and main:FindFirstChild("Content")
+                local lbl = content and content:FindFirstChild("NameLabel")
+                if lbl and lbl:IsA("TextLabel") then
+                    lbl.Text = "ZenithExility"
+                end
+            end
+        end
+    end)
+    
+    showNotification("Control Player", "Interface carregada com tema Zenikaze!", 3)
+end)1Click:Connect(function() aj.Enabled = false end)
+
+            local content = ensure("Frame", "Content", main)
+            content.Size = UDim2.new(1, -32, 1, -56)
+            content.Position = UDim2.new(0, 16, 0, 48)
+            content.BackgroundTransparency = 1
+
+            local layout = content:FindFirstChildOfClass("UIListLayout")
+            if not layout then
+                layout = Instance.new("UIListLayout", content)
+                layout.SortOrder = Enum.SortOrder.LayoutOrder
+                layout.Padding   = UDim.new(0, 8)
+            end
+
+            local btnControlOrig, btnShootOrig
+            local order = 1
+            local function styleButton(btn)
+                btn.Parent = content
+                btn.LayoutOrder = order
+                order = order + 1
+                btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                btn.BorderSizePixel  = 0
+                btn.Size             = UDim2.new(1, 0, 0, 48)
+                btn.AutoButtonColor  = true
+                btn.Font             = Enum.Font.GothamBold
+                btn.TextSize         = 18
                 btn.TextColor3       = Color3.fromRGB(255, 255, 0)
                 if not btn:FindFirstChildOfClass("UICorner") then
                     local uc = Instance.new("UICorner", btn)
                     uc.CornerRadius = UDim.new(0, 12)
                 end
                 local s = btn:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke", btn)
-                s.Thickness, s.Color = 1, Color3.fromRGB(255, 255, 0)
+                s.Thickness, s.Color = 1, ZENIKAZE_COLOR
             end
 
             for _, d in ipairs(main:GetDescendants()) do
