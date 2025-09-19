@@ -114,7 +114,7 @@ local function showNotification(title, message, duration)
     local gui = Instance.new("ScreenGui")
     gui.Name = "ZenikazeNotification"; gui.Parent = PlayerGui; gui.ResetOnSpawn = false
     local fr = Instance.new("Frame")
-    fr.Size = UDim2.new(0, 320, 0, 80); fr.Position = UDim2.new(1, 10, 1, -90)
+    fr.Size = UDim2.new(0, 320, 0, 80); fr.Position = UDim2.new(1, 10, 0, 20)
     fr.BackgroundColor3 = Color3.fromRGB(20,20,25); fr.BorderSizePixel=0; fr.Parent = gui
     Instance.new("UICorner", fr).CornerRadius = UDim.new(0,12)
     local st = Instance.new("UIStroke", fr); st.Thickness=2; st.Color=ZENIKAZE_COLOR
@@ -127,10 +127,10 @@ local function showNotification(title, message, duration)
     ml.Size=UDim2.new(1,-10,0,45); ml.Position=UDim2.new(0,5,0,30); ml.BackgroundTransparency=1
     ml.Text = message; ml.TextColor3=Color3.fromRGB(255,255,255); ml.TextSize=12; ml.Font=Enum.Font.Gotham; ml.TextXAlignment=Enum.TextXAlignment.Left; ml.TextWrapped=true
 
-    TweenService:Create(fr, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position=UDim2.new(1,-330,1,-90)}):Play()
+    TweenService:Create(fr, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position=UDim2.new(1,-330,0,20)}):Play()
     task.spawn(function()
         task.wait(duration or 5)
-        local tw = TweenService:Create(fr, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Position=UDim2.new(1,10,1,-90)})
+        local tw = TweenService:Create(fr, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Position=UDim2.new(1,10,0,20)})
         tw:Play(); tw.Completed:Connect(function() gui:Destroy() end)
     end)
 end
@@ -159,9 +159,9 @@ local function toggleHighJump(on)
                 hum.JumpPower = jumpPower
             end
         end)
-        showNotification("Jump Boost", "Jump ativado! Altura: " .. jumpPower, 3)
+        showNotification("Jump Boost", "Jump activated! Height: " .. jumpPower, 3)
     else
-        showNotification("Jump Boost", "Jump desativado!", 2)
+        showNotification("Jump Boost", "Jump deactivated!", 2)
     end
 end
 
@@ -2401,14 +2401,14 @@ do
     local rel=(jumpPower-50)/(225-50); JumpHandle.Position=UDim2.new(0.12 + 0.76*rel, -10, 0.33, 0)
 end
 
-local JumpToggleBtn = createButton(SubPageJump, "ATIVAR / DESATIVAR JUMP", function()
+local JumpToggleBtn = createButton(SubPageJump, "ACTIVATE / DEACTIVATE JUMP", function()
     local newState = not ScriptStatus.JumpBoost
     toggleHighJump(newState)
-    JumpToggleBtn.Text = newState and "DESATIVAR JUMP" or "ATIVAR JUMP"
+    JumpToggleBtn.Text = newState and "DEACTIVATE JUMP" or "ACTIVATE JUMP"
 end)
 
 -- ======================== --
---   SPEED (SUBPÁGINA)      --
+--   SPEED (SUBPAGE)        --
 -- ======================== --
 do
     local t = Instance.new("TextLabel", SubPageSpeed)
@@ -2468,11 +2468,11 @@ local SpeedToggleBtn = createButton(SubPageSpeed, "ATIVAR / DESATIVAR SPEED", fu
     if speedActive then 
         startSpeedControl()
         SpeedToggleBtn.Text = "DESATIVAR SPEED"
-        showNotification("Speed","Velocidade ativada!",3) 
+        showNotification("Speed","Speed activated!",3) 
     else 
         stopSpeedControl()
-        SpeedToggleBtn.Text = "ATIVAR SPEED"
-        showNotification("Speed","Velocidade desativada!",2) 
+        SpeedToggleBtn.Text = "ACTIVATE SPEED"
+        showNotification("Speed","Speed deactivated!",2) 
     end
 end)
 
@@ -2485,15 +2485,15 @@ do
     t.TextColor3=ZENIKAZE_COLOR; t.TextSize=16; t.Font=Enum.Font.Gotham
 end
 
-local FloatButton = createButton(SubPageFloat, "Flutuar", function()
+local FloatButton = createButton(SubPageFloat, "Float", function()
     if not floatActive then 
         startFloat()
-        FloatButton.Text = "Parar Float"
-        showNotification("Float", "Float ativado!", 3)
+        FloatButton.Text = "Stop Float"
+        showNotification("Float", "Float activated!", 3)
     else 
         stopFloat()
-        FloatButton.Text = "Flutuar"
-        showNotification("Float", "Float desativado!", 2)
+        FloatButton.Text = "Float"
+        showNotification("Float", "Float deactivated!", 2)
     end
 end)
 
@@ -2509,11 +2509,11 @@ local FPSBtn = createButton(SubPageFPS, "START!", function()
     if FPSDestroyer.running then
         FPSDestroyer:Stop()
         FPSBtn.Text = "START!"
-        showNotification("FPS Destroyer", "Desativado!", 2)
+        showNotification("FPS Destroyer", "Deactivated!", 2)
     else
         FPSDestroyer:Start()
         FPSBtn.Text = "STOP!"
-        showNotification("FPS Destroyer", "Ativado! Use Medusa's Head e Bat", 3)
+        showNotification("FPS Destroyer", "Activated! Use Medusa's Head and Bat", 3)
     end
 end)
 
@@ -2529,10 +2529,10 @@ end
 local SemiInvisToggle = createToggle(SubPageSemiInvis, "Semi Invisible", ScriptStatus.SemiInvisible, function(state)
     if state then
         SemiInvisible:Start()
-        showNotification("Semi Invisible", "Ativado por 30 segundos!", 3)
+        showNotification("Semi Invisible", "Activated for 30 seconds!", 3)
     else
         SemiInvisible:Stop()
-        showNotification("Semi Invisible", "Desativado!", 2)
+        showNotification("Semi Invisible", "Deactivated!", 2)
     end
 end)
 
@@ -2552,11 +2552,11 @@ local ControlInfoStroke = Instance.new("UIStroke", ControlInfo); ControlInfoStro
 
 local ControlInfoLabel = Instance.new("TextLabel", ControlInfo)
 ControlInfoLabel.Size=UDim2.new(1,-20,1,-20); ControlInfoLabel.Position=UDim2.new(0,10,0,10); ControlInfoLabel.BackgroundTransparency=1
-ControlInfoLabel.Text="Abre uma GUI para controlar outros players próximos. Interface otimizada com tema Zenikaze."
+ControlInfoLabel.Text="Opens a GUI to control other nearby players. Optimized interface with Zenikaze theme."
 ControlInfoLabel.TextColor3=Color3.fromRGB(200,200,200); ControlInfoLabel.TextSize=12; ControlInfoLabel.Font=Enum.Font.Gotham
 ControlInfoLabel.TextWrapped=true; ControlInfoLabel.TextXAlignment=Enum.TextXAlignment.Left
 
-local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Player", function()
+local ControlPlayerBtn = createButton(SubPageControlPlayer, "Open Control Player", function()
     task.spawn(function()
         local url = "https://raw.githubusercontent.com/Obama9282921781/Rjdhdidjdj/refs/heads/main/Protected_4809522785054226.lua.txt"
         pcall(function()
@@ -2845,7 +2845,7 @@ local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Playe
         end
     end)
 
-    showNotification("Control Player", "Interface carregada com tema Zenikaze!", 3)
+    showNotification("Control Player", "Interface loaded with Zenikaze theme!", 3)
 end)
 
 do
@@ -2854,15 +2854,15 @@ do
     t.TextColor3=ZENIKAZE_COLOR; t.TextSize=16; t.Font=Enum.Font.Gotham
 end
 
-local ThirdFloorBtn = createButton(SubPageThirdFloor, "Ativar 3rd Floor", function()
+local ThirdFloorBtn = createButton(SubPageThirdFloor, "Activate 3rd Floor", function()
     if ThirdFloor.active then
         ThirdFloor:Stop()
-        ThirdFloorBtn.Text = "Ativar 3rd Floor"
-        showNotification("3rd Floor", "Desativado!", 2)
+        ThirdFloorBtn.Text = "Activate 3rd Floor"
+        showNotification("3rd Floor", "Deactivated!", 2)
     else
         ThirdFloor:Start()
-        ThirdFloorBtn.Text = "Desativar 3rd Floor"
-        showNotification("3rd Floor", "Ativado! Plataforma criada!", 3)
+        ThirdFloorBtn.Text = "Deactivate 3rd Floor"
+        showNotification("3rd Floor", "Activated! Platform created!", 3)
     end
 end)
 
@@ -3267,40 +3267,14 @@ ToggleButton.MouseButton1Click:Connect(function()
     InterfaceVisible = not InterfaceVisible
     MainFrame.Visible = InterfaceVisible
     if InterfaceVisible then
-        -- Hide all elements initially for animation
-        for _, element in pairs({TabBar, Content, Header}) do
-            element.BackgroundTransparency = 1
-            for _, child in pairs(element:GetDescendants()) do
-                if child:IsA("GuiObject") then
-                    child.BackgroundTransparency = 1
-                    child.TextTransparency = 1
-                end
-            end
-        end
-        
-        -- Start zoom in animation
+        -- Simple zoom in animation
         MainFrame.Size = UDim2.new(0,10,0,10)
         MainFrame.Position = UDim2.new(0.5,-5,0.5,-5)
         local animInfo = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
         local sizeTarget = UDim2.new(0,320,0,240)
         local posTarget = UDim2.new(0.5,-160,0.5,-120)
         
-        local mainTween = TweenService:Create(MainFrame, animInfo, {Size=sizeTarget, Position=posTarget})
-        mainTween:Play()
-        
-        -- Animate elements back after main animation
-        mainTween.Completed:Connect(function()
-            local fadeInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-            for _, element in pairs({TabBar, Content, Header}) do
-                TweenService:Create(element, fadeInfo, {BackgroundTransparency = element.Name == "Header" and 0 or 1}):Play()
-                for _, child in pairs(element:GetDescendants()) do
-                    if child:IsA("GuiObject") then
-                        local targetBg = child:GetAttribute("OriginalBgTransparency") or (child.BackgroundColor3 == Color3.fromRGB(0,0,0) and 0 or child.BackgroundTransparency)
-                        TweenService:Create(child, fadeInfo, {BackgroundTransparency = targetBg, TextTransparency = 0}):Play()
-                    end
-                end
-            end
-        end)
+        TweenService:Create(MainFrame, animInfo, {Size=sizeTarget, Position=posTarget}):Play()
     end
 end)
 
