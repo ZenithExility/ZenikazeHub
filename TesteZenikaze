@@ -1831,48 +1831,148 @@ do
     t.TextColor3=ZENIKAZE_COLOR; t.TextSize=16; t.Font=Enum.Font.Gotham
 end
 
--- Frame de informações
-local TPHighestInfo = Instance.new("Frame", SubPageTPHighest)
-TPHighestInfo.Size=UDim2.new(1,0,0,80); TPHighestInfo.BackgroundColor3=Color3.fromRGB(20,20,20); TPHighestInfo.BorderSizePixel=0
-Instance.new("UICorner", TPHighestInfo).CornerRadius=UDim.new(0,12)
-local TPInfoStroke = Instance.new("UIStroke", TPHighestInfo); TPInfoStroke.Color=ZENIKAZE_COLOR; TPInfoStroke.Thickness=1
-
-local TPInfoLabel = Instance.new("TextLabel", TPHighestInfo)
-TPInfoLabel.Size=UDim2.new(1,-20,1,-20); TPInfoLabel.Position=UDim2.new(0,10,0,10); TPInfoLabel.BackgroundTransparency=1
-TPInfoLabel.Text="Teleporta para a base com o maior valor de item. Escaneia todas as bases visíveis e encontra o item mais valioso automaticamente."
-TPInfoLabel.TextColor3=Color3.fromRGB(200,200,200); TPInfoLabel.TextSize=12; TPInfoLabel.Font=Enum.Font.Gotham
-TPInfoLabel.TextWrapped=true; TPInfoLabel.TextXAlignment=Enum.TextXAlignment.Left
-
 -- Botão principal de teleporte
-local TPHighestBtn = createButton(SubPageTPHighest, "Teleportar para Highest", function()
-    TPHighest.teleportToHighest()
+local TPHighestBtn = createButton(SubPageTPHighest, "TP Now!", function()
+    -- Código exato que foi fornecido
+    pcall(function()
+        local Players = game:GetService("Players")
+        local TeleportService = game:GetService("TeleportService")
+        local LocalPlayer = Players.LocalPlayer
+        local UserInputService = game:GetService("UserInputService")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local Workspace = game:GetService("Workspace")
+
+        local Plots = Workspace:WaitForChild("Plots")
+
+        local function parseBrainhotValue(display)
+            local cleanText = display:gsub("[,% ]", ""):upper()
+            local number, suffix = cleanText:match("([%d%.]+)([KMBT]?)$")
+            if not number then return 0 end
+            
+            local value = tonumber(number) or 0
+            if suffix == "K" then value = value * 1e3
+            elseif suffix == "M" then value = value * 1e6
+            elseif suffix == "B" then value = value * 1e9
+            elseif suffix == "T" then value = value * 1e12 end
+            
+            return value
+        end
+
+        local highestValue = 0
+        local bestPosition = nil
+
+        for _, plot in pairs(Plots:GetChildren()) do
+            local decorations = plot:FindFirstChild("Decorations")
+            if decorations then
+                for _, decorModel in pairs(decorations:GetChildren()) do
+                    for _, item in pairs(decorModel:GetDescendants()) do
+                        if item:IsA("BasePart") and item.Name == "BrainrotGod" then
+                            for _, descendant in pairs(item:GetDescendants()) do
+                                if descendant:IsA("TextLabel") and descendant.Name == "DisplayName" then
+                                    local brainhotName = descendant.Text
+                                    local valueInfo = brainhotName:match("%((.-)%)")
+                                    if valueInfo then
+                                        local value = parseBrainhotValue(valueInfo)
+                                        if value > highestValue then
+                                            highestValue = value
+                                            bestPosition = item.Position
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if bestPosition and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(bestPosition + Vector3.new(0, 5, 0))
+            showNotification("TP Highest", "Teleportado para o Brainrot de maior valor!", 3)
+        else
+            showNotification("TP Highest", "Nenhum Brainrot encontrado!", 3)
+        end
+    end)
 end)
 
--- Frame de estatísticas
-local TPStatsFrame = Instance.new("Frame", SubPageTPHighest)
-TPStatsFrame.Size=UDim2.new(1,0,0,60); TPStatsFrame.BackgroundColor3=Color3.fromRGB(20,20,20); TPStatsFrame.BorderSizePixel=0
-Instance.new("UICorner", TPStatsFrame).CornerRadius=UDim.new(0,12)
-local TPStatsStroke = Instance.new("UIStroke", TPStatsFrame); TPStatsStroke.Color=ZENIKAZE_COLOR; TPStatsStroke.Thickness=1
+-- Frame de informações pequeno
+local TPInfoFrame = Instance.new("Frame", SubPageTPHighest)
+TPInfoFrame.Size=UDim2.new(1,0,0,40); TPInfoFrame.BackgroundColor3=Color3.fromRGB(20,20,20); TPInfoFrame.BorderSizePixel=0
+Instance.new("UICorner", TPInfoFrame).CornerRadius=UDim.new(0,12)
+local TPInfoStroke = Instance.new("UIStroke", TPInfoFrame); TPInfoStroke.Color=ZENIKAZE_COLOR; TPInfoStroke.Thickness=1
 
-local TPStatsLabel = Instance.new("TextLabel", TPStatsFrame)
-TPStatsLabel.Size=UDim2.new(1,-20,1,-20); TPStatsLabel.Position=UDim2.new(0,10,0,10); TPStatsLabel.BackgroundTransparency=1
-TPStatsLabel.Text="Clique em 'Scan' para ver estatísticas detalhadas dos itens encontrados nas bases próximas."
-TPStatsLabel.TextColor3=ZENIKAZE_COLOR; TPStatsLabel.TextSize=11; TPStatsLabel.Font=Enum.Font.Gotham
-TPStatsLabel.TextWrapped=true; TPStatsLabel.TextXAlignment=Enum.TextXAlignment.Left
+local TPInfoLabel = Instance.new("TextLabel", TPInfoFrame)
+TPInfoLabel.Size=UDim2.new(1,-20,1,-10); TPInfoLabel.Position=UDim2.new(0,10,0,5); TPInfoLabel.BackgroundTransparency=1
+TPInfoLabel.Text="Aguardando scan..."
+TPInfoLabel.TextColor3=ZENIKAZE_COLOR; TPInfoLabel.TextSize=10; TPInfoLabel.Font=Enum.Font.Gotham
+TPInfoLabel.TextWrapped=true; TPInfoLabel.TextXAlignment=Enum.TextXAlignment.Center
 
--- Botão de scan para estatísticas
-local TPScanBtn = createButton(SubPageTPHighest, "Scan Bases", function()
-    local bestPosition, bestValue, plotName, foundItems = TPHighest.scan()
-    
-    if not bestPosition then
-        TPStatsLabel.Text = "Nenhum item de valor encontrado nas bases próximas."
-    else
-        local valueText = bestValue >= 1000000 and string.format("%.1fM", bestValue/1000000) or 
-                         bestValue >= 1000 and string.format("%.1fK", bestValue/1000) or 
-                         tostring(bestValue)
-        
-        TPStatsLabel.Text = string.format("Melhor: %s\nValor: %s\nItens encontrados: %d", 
-            plotName or "Plot desconhecido", valueText, foundItems)
+-- Função para atualizar info automaticamente
+task.spawn(function()
+    while true do
+        pcall(function()
+            local Players = game:GetService("Players")
+            local LocalPlayer = Players.LocalPlayer
+            local Workspace = game:GetService("Workspace")
+            local Plots = Workspace:FindFirstChild("Plots")
+            
+            if not Plots then return end
+
+            local function parseBrainhotValue(display)
+                local cleanText = display:gsub("[,% ]", ""):upper()
+                local number, suffix = cleanText:match("([%d%.]+)([KMBT]?)$")
+                if not number then return 0 end
+                
+                local value = tonumber(number) or 0
+                if suffix == "K" then value = value * 1e3
+                elseif suffix == "M" then value = value * 1e6
+                elseif suffix == "B" then value = value * 1e9
+                elseif suffix == "T" then value = value * 1e12 end
+                
+                return value
+            end
+
+            local highestValue = 0
+            local bestBrainhotName = ""
+
+            for _, plot in pairs(Plots:GetChildren()) do
+                local decorations = plot:FindFirstChild("Decorations")
+                if decorations then
+                    for _, decorModel in pairs(decorations:GetChildren()) do
+                        for _, item in pairs(decorModel:GetDescendants()) do
+                            if item:IsA("BasePart") and item.Name == "BrainrotGod" then
+                                for _, descendant in pairs(item:GetDescendants()) do
+                                    if descendant:IsA("TextLabel") and descendant.Name == "DisplayName" then
+                                        local brainhotName = descendant.Text
+                                        local valueInfo = brainhotName:match("%((.-)%)")
+                                        if valueInfo then
+                                            local value = parseBrainhotValue(valueInfo)
+                                            if value > highestValue then
+                                                highestValue = value
+                                                bestBrainhotName = brainhotName
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            if highestValue > 0 then
+                local valueText = highestValue >= 1e12 and string.format("%.1fT", highestValue/1e12) or
+                                 highestValue >= 1e9 and string.format("%.1fB", highestValue/1e9) or
+                                 highestValue >= 1e6 and string.format("%.1fM", highestValue/1e6) or
+                                 highestValue >= 1e3 and string.format("%.1fK", highestValue/1e3) or
+                                 tostring(highestValue)
+                
+                TPInfoLabel.Text = bestBrainhotName .. " • " .. valueText
+            else
+                TPInfoLabel.Text = "Nenhum Brainrot encontrado"
+            end
+        end)
+        task.wait(3) -- Atualiza a cada 3 segundos
     end
 end)
 
