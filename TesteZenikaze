@@ -371,8 +371,33 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ======================== --
---   SEMI INVISIBLE SYSTEM  --
+--   OTIMIZAÇÕES DE PERFORMANCE E CORREÇÃO DE ERROS --
 -- ======================== --
+
+-- Adicionar verificações de segurança para ReplicatedStorage
+local function safeFireRemote(remotePath, ...)
+    pcall(function()
+        local remote = ReplicatedStorage
+        for _, path in ipairs(remotePath) do
+            if remote then
+                remote = remote:FindFirstChild(path)
+            else
+                return false
+            end
+        end
+        if remote and remote.FireServer then
+            remote:FireServer(...)
+            return true
+        end
+    end)
+    return false
+end
+
+-- Função otimizada para evitar erros de nil value
+local function safeGetChild(parent, childName)
+    if not parent then return nil end
+    return parent:FindFirstChild(childName)
+end
 local SemiInvisible = {}
 SemiInvisible.active = false
 SemiInvisible.animTrack = nil
@@ -996,13 +1021,15 @@ local function updateESP()
     local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myHRP then return end
     
+    local objectsToRemove = {}
+    
     for object, espData in pairs(ESPObjects) do
-        if not object or not object.Parent then
-            removeESP(object)
-            continue
-        end
-        
         pcall(function()
+            if not object or not object.Parent then
+                table.insert(objectsToRemove, object)
+                return
+            end
+            
             local objectPos = nil
             
             if espData.type == "Player" then
@@ -1014,6 +1041,12 @@ local function updateESP()
             
             if objectPos and espData.billboard then
                 local distance = (myHRP.Position - objectPos).Magnitude
+                
+                -- Otimização: remove ESP muito distante para economizar memória
+                if distance > ESP_SETTINGS.MaxDistance * 1.5 then
+                    table.insert(objectsToRemove, object)
+                    return
+                end
                 
                 if distance <= ESP_SETTINGS.MaxDistance then
                     espData.billboard.Enabled = true
@@ -1027,6 +1060,11 @@ local function updateESP()
                 end
             end
         end)
+    end
+    
+    -- Remove objetos órfãos para liberar memória
+    for _, object in ipairs(objectsToRemove) do
+        removeESP(object)
     end
 end
 
@@ -2816,17 +2854,37 @@ end)
 
 task.spawn(function()
     local lastScanTime = 0
-    local SCAN_INTERVAL = 3  -- Escaneia apenas a cada 3 segundos
+    local lastCleanupTime = 0
+    local SCAN_INTERVAL = 5  -- Aumentado para 5 segundos
+    local CLEANUP_INTERVAL = 10  -- Limpeza a cada 10 segundos
     
     while true do
         local currentTime = tick()
         
         pcall(function()
+            -- Limpeza periódica de objetos órfãos
+            if currentTime - lastCleanupTime > CLEANUP_INTERVAL then
+                for obj, espData in pairs(ESPObjects) do
+                    if not obj or not obj.Parent then
+                        removeESP(obj)
+                    end
+                end
+                
+                for name, esp in pairs(BaseESPObjects) do
+                    if not esp or not esp.Parent then
+                        BaseESPObjects[name] = nil
+                    end
+                end
+                
+                lastCleanupTime = currentTime
+            end
+            
+            -- ESP de players (mais frequente)
             if ESP_SETTINGS.Enabled and ESP_SETTINGS.Players then
                 scanForPlayers()
             end
             
-            -- Só escaneia objetos ocasionalmente para reduzir lag
+            -- Scan de objetos menos frequente
             if currentTime - lastScanTime > SCAN_INTERVAL then
                 if ESP_SETTINGS.Enabled and (ESP_SETTINGS.BrainhotsGods or ESP_SETTINGS.BrainhotsSecrets) then
                     scanForObjects()
@@ -2834,9 +2892,10 @@ task.spawn(function()
                 lastScanTime = currentTime
             end
             
+            -- Update ESP com verificação de distância
             updateESP()
         end)
-        task.wait(1)  -- Reduzido de 2 para 1 segundo para melhor responsividade do ESP de players
+        task.wait(2)  -- Mantido em 2 segundos para balancear performance
     end
 end)
 
