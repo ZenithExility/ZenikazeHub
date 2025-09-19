@@ -1046,9 +1046,20 @@ local function scanForObjects()
     local plotsFolder = Workspace:FindFirstChild("Plots")
     if not plotsFolder then return end
     
+    local myChar = LocalPlayer.Character
+    local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    
     pcall(function()
-        for _, plot in pairs(plotsFolder:GetChildren()) do
+        for _, plot in ipairs(plotsFolder:GetChildren()) do
             pcall(function()
+                -- Otimização: pula se muito distante
+                if myHRP then
+                    local plotPos = plot:FindFirstChild("Main") and plot.Main.Position
+                    if plotPos and (myHRP.Position - plotPos).Magnitude > 300 then
+                        return
+                    end
+                end
+                
                 local isMyPlot = false
                 local plotSign = plot:FindFirstChild("PlotSign")
                 
@@ -1062,31 +1073,37 @@ local function scanForObjects()
                 end
                 
                 if not isMyPlot then
-                    for _, descendant in pairs(plot:GetDescendants()) do
-                        pcall(function()
-                            if (descendant:IsA("BasePart") or descendant:IsA("MeshPart")) and not ESPObjects[descendant] then
-                                local rarity = getRarityFromObject(descendant)
-                                
-                                local shouldShow = false
-                                if rarity == "BrainrotGod" and ESP_SETTINGS.BrainhotsGods then
-                                    shouldShow = true
-                                elseif rarity == "Secret" and ESP_SETTINGS.BrainhotsSecrets then
-                                    shouldShow = true
-                                end
-                                
-                                if shouldShow then
-                                    local displayName = nil
-                                    for _, child in pairs(descendant:GetDescendants()) do
-                                        if child.Name == "DisplayName" and child:IsA("TextLabel") then
-                                            displayName = child.Text
-                                            break
+                    -- Otimização: limita busca a partes principais apenas
+                    local decorations = plot:FindFirstChild("Decorations")
+                    if decorations then
+                        for _, decorModel in ipairs(decorations:GetChildren()) do
+                            for _, descendant in ipairs(decorModel:GetChildren()) do
+                                pcall(function()
+                                    if (descendant:IsA("BasePart") or descendant:IsA("MeshPart")) and not ESPObjects[descendant] then
+                                        local rarity = getRarityFromObject(descendant)
+                                        
+                                        local shouldShow = false
+                                        if rarity == "BrainrotGod" and ESP_SETTINGS.BrainhotsGods then
+                                            shouldShow = true
+                                        elseif rarity == "Secret" and ESP_SETTINGS.BrainhotsSecrets then
+                                            shouldShow = true
+                                        end
+                                        
+                                        if shouldShow then
+                                            local displayName = nil
+                                            for _, child in pairs(descendant:GetChildren()) do
+                                                if child.Name == "DisplayName" and child:IsA("TextLabel") then
+                                                    displayName = child.Text
+                                                    break
+                                                end
+                                            end
+                                            
+                                            createESPBox(descendant, "Item", displayName or rarity, rarity)
                                         end
                                     end
-                                    
-                                    createESPBox(descendant, "Item", displayName or rarity, rarity)
-                                end
+                                end)
                             end
-                        end)
+                        end
                     end
                 end
             end)
@@ -1095,75 +1112,98 @@ local function scanForObjects()
 end
 
 -- ======================== --
---   ESP BASE TIME SYSTEM   --
+--   ESP BASE TIME SYSTEM (OTIMIZADO) --
 -- ======================== --
 local function createBaseTimeESP()
     local plotsFolder = Workspace:FindFirstChild("Plots")
     if not plotsFolder then return function() end end
     
+    local lastUpdateTime = 0
+    local UPDATE_INTERVAL = 2  -- Atualiza apenas a cada 2 segundos para reduzir lag
+    
     local function findPlayerPlot()
-        pcall(function()
-            for i, plot in plotsFolder:GetChildren() do
-                local yourBase = plot:FindFirstChild("YourBase", true)
-                if yourBase and yourBase:IsA("BoolValue") and yourBase.Value then
-                    return plot.Name
-                end
+        for _, plot in ipairs(plotsFolder:GetChildren()) do
+            local yourBase = plot:FindFirstChild("YourBase", true)
+            if yourBase and yourBase:IsA("BoolValue") and yourBase.Value then
+                return plot.Name
             end
-        end)
+        end
         return nil
     end
     
     local function createESP(plot, mainPart)
-        pcall(function()
-            if BaseESPObjects[plot.Name] then
-                BaseESPObjects[plot.Name]:Destroy()
-            end
+        if BaseESPObjects[plot.Name] then
+            BaseESPObjects[plot.Name]:Destroy()
+        end
 
-            local billboard = Instance.new("BillboardGui")
-            billboard.Name = "PlotESP_"..plot.Name
-            billboard.Size = UDim2.new(0, 180, 0, 40)
-            billboard.StudsOffset = Vector3.new(0, 5, 0)
-            billboard.AlwaysOnTop = true
-            billboard.Adornee = mainPart
-            billboard.MaxDistance = 1000
-            billboard.Parent = plot
+        local billboard = Instance.new("BillboardGui")
+        billboard.Name = "PlotESP_"..plot.Name
+        billboard.Size = UDim2.new(0, 120, 0, 25)  -- Tamanho reduzido
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.AlwaysOnTop = true
+        billboard.Adornee = mainPart
+        billboard.MaxDistance = 800  -- Distância reduzida para melhor performance
+        billboard.Parent = plot
 
-            local frame = Instance.new("Frame")
-            frame.Size = UDim2.new(1, 0, 1, 0)
-            frame.BackgroundTransparency = 0.8
-            frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-            frame.BorderSizePixel = 0
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(1, 0, 1, 0)
+        frame.BackgroundTransparency = 0.8
+        frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        frame.BorderSizePixel = 0
 
-            local label = Instance.new("TextLabel")
-            label.Name = "Label"
-            label.Size = UDim2.new(1, -10, 1, -10)
-            label.Position = UDim2.new(0, 5, 0, 5)
-            label.BackgroundTransparency = 1
-            label.TextScaled = true
-            label.Font = Enum.Font.GothamBold
-            label.TextStrokeTransparency = 0.5
-            label.TextStrokeColor3 = Color3.new(0, 0, 0)
-            label.Parent = frame
+        local label = Instance.new("TextLabel")
+        label.Name = "Label"
+        label.Size = UDim2.new(1, -6, 1, -6)
+        label.Position = UDim2.new(0, 3, 0, 3)
+        label.BackgroundTransparency = 1
+        label.TextScaled = true
+        label.Font = Enum.Font.Gotham
+        label.TextSize = 12  -- Tamanho de texto reduzido
+        label.TextStrokeTransparency = 0.5
+        label.TextStrokeColor3 = Color3.new(0, 0, 0)
+        label.Parent = frame
 
-            local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(0, 6)
-            corner.Parent = frame
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 4)  -- Cantos menores
+        corner.Parent = frame
 
-            frame.Parent = billboard
-            BaseESPObjects[plot.Name] = billboard
-        end)
+        frame.Parent = billboard
+        BaseESPObjects[plot.Name] = billboard
 
         return BaseESPObjects[plot.Name]
     end
     
     local function updateBaseESP()
+        local currentTime = tick()
+        if currentTime - lastUpdateTime < UPDATE_INTERVAL then
+            return  -- Pula atualização se não passou tempo suficiente
+        end
+        lastUpdateTime = currentTime
+        
         if not ScriptStatus.BaseESP then return end
         
         pcall(function()
             local playerPlot = findPlayerPlot()
 
-            for i, plot in plotsFolder:GetChildren() do
+            -- Atualiza apenas plots visíveis próximos ao jogador
+            local myChar = LocalPlayer.Character
+            local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            
+            for _, plot in ipairs(plotsFolder:GetChildren()) do
                 pcall(function()
+                    -- Verifica distância para otimização
+                    if myHRP then
+                        local plotPos = plot:FindFirstChild("Main") and plot.Main.Position
+                        if plotPos and (myHRP.Position - plotPos).Magnitude > 500 then
+                            -- Remove ESP se muito distante
+                            if BaseESPObjects[plot.Name] then
+                                BaseESPObjects[plot.Name]:Destroy()
+                                BaseESPObjects[plot.Name] = nil
+                            end
+                            return
+                        end
+                    end
+                    
                     local purchases = plot:FindFirstChild("Purchases")
                     local plotBlock = purchases and purchases:FindFirstChild("PlotBlock")
                     local mainPart = plotBlock and plotBlock:FindFirstChild("Main")
@@ -1177,13 +1217,13 @@ local function createBaseTimeESP()
                             local label = frame and frame:FindFirstChild("Label")
                             local isUnlocked = (timeLabel.Text == "0s")
                             if label then
-                                label.Text = isUnlocked and "Unlocked" or ("Locked: "..timeLabel.Text)
+                                label.Text = isUnlocked and "Unlocked" or timeLabel.Text
                                 if plot.Name == playerPlot then
-                                    label.TextColor3 = Color3.fromRGB(0, 255, 0)
+                                    label.TextColor3 = Color3.fromRGB(0, 255, 0)  -- Verde para sua base
                                 elseif isUnlocked then
-                                    label.TextColor3 = Color3.fromRGB(255, 50, 50)
+                                    label.TextColor3 = ZENIKAZE_COLOR  -- Cor da UI para desbloqueado
                                 else
-                                    label.TextColor3 = Color3.fromRGB(255, 255, 0)
+                                    label.TextColor3 = Color3.fromRGB(255, 100, 100)  -- Vermelho para bloqueado
                                 end
                             end
                         end
@@ -1384,7 +1424,7 @@ ToggleButton.Size=UDim2.new(0,64,0,64)
 ToggleButton.Position=UDim2.new(0,20,0.5,-32)
 ToggleButton.BackgroundColor3 = Color3.fromRGB(0,0,0)
 ToggleButton.BorderSizePixel=0
-ToggleButton.Image = "rbxthumb://type=Asset&id=122962552617784&w=420&h=420"
+ToggleButton.Image = "rbxthumb://type=Asset&id=85721242236613&w=420&h=420"
 ToggleButton.ScaleType = Enum.ScaleType.Fit
 ToggleButton.Parent = MainGui
 Instance.new("UICorner", ToggleButton).CornerRadius = UDim.new(0,16)  -- Squircle
@@ -1942,7 +1982,7 @@ local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Playe
 
             local mainStroke = main:FindFirstChildOfClass("UIStroke")
             if not mainStroke then mainStroke = Instance.new("UIStroke", main) end
-            mainStroke.Color, mainStroke.Thickness, mainStroke.Transparency = Color3.fromRGB(255, 255, 0), 2, 0
+            mainStroke.Color, mainStroke.Thickness, mainStroke.Transparency = ZENIKAZE_COLOR, 2, 0
 
             local header = ensure("Frame", "Header", main)
             header.Size = UDim2.new(1, 0, 0, 40)
@@ -1966,7 +2006,7 @@ local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Playe
             title.Position = UDim2.new(0, 16, 0, 0)
             title.Font = Enum.Font.GothamBold
             title.Text = "Zenikaze Hub ⚡"
-            title.TextColor3 = Color3.fromRGB(255, 255, 0)
+            title.TextColor3 = ZENIKAZE_COLOR
             title.TextSize = 20
             title.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -1976,7 +2016,7 @@ local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Playe
             close.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
             close.BorderSizePixel = 0
             close.Text = "x"
-            close.TextColor3 = Color3.fromRGB(255, 255, 0)
+            close.TextColor3 = ZENIKAZE_COLOR
             close.TextSize = 14
             close.Font = Enum.Font.GothamBold
             if not close:FindFirstChildOfClass("UICorner") then
@@ -1984,10 +2024,10 @@ local ControlPlayerBtn = createButton(SubPageControlPlayer, "Abrir Control Playe
                 c.CornerRadius = UDim.new(0, 8)
             end
             close.MouseEnter:Connect(function()
-                TweenService:Create(close, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 0), TextColor3 = Color3.fromRGB(0, 0, 0)}):Play()
+                TweenService:Create(close, TweenInfo.new(0.2), {BackgroundColor3 = ZENIKAZE_COLOR, TextColor3 = Color3.fromRGB(0, 0, 0)}):Play()
             end)
             close.MouseLeave:Connect(function()
-                TweenService:Create(close, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 0, 0), TextColor3 = Color3.fromRGB(255, 255, 0)}):Play()
+                TweenService:Create(close, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 0, 0), TextColor3 = ZENIKAZE_COLOR}):Play()
             end)
             close.MouseButton1Click:Connect(function() aj.Enabled = false end)
 
@@ -2630,17 +2670,28 @@ task.spawn(function()
 end)
 
 task.spawn(function()
+    local lastScanTime = 0
+    local SCAN_INTERVAL = 3  -- Escaneia apenas a cada 3 segundos
+    
     while true do
+        local currentTime = tick()
+        
         pcall(function()
             if ESP_SETTINGS.Enabled and ESP_SETTINGS.Players then
                 scanForPlayers()
             end
-            if ESP_SETTINGS.Enabled and (ESP_SETTINGS.BrainhotsGods or ESP_SETTINGS.BrainhotsSecrets) then
-                scanForObjects()
+            
+            -- Só escaneia objetos ocasionalmente para reduzir lag
+            if currentTime - lastScanTime > SCAN_INTERVAL then
+                if ESP_SETTINGS.Enabled and (ESP_SETTINGS.BrainhotsGods or ESP_SETTINGS.BrainhotsSecrets) then
+                    scanForObjects()
+                end
+                lastScanTime = currentTime
             end
+            
             updateESP()
         end)
-        task.wait(2)
+        task.wait(1)  -- Reduzido de 2 para 1 segundo para melhor responsividade do ESP de players
     end
 end)
 
