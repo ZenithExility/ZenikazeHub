@@ -1074,11 +1074,11 @@ local function scanForObjects()
                 end
 
                 if not isMyPlot then
-                    -- Otimização: limita busca a partes principais apenas
+                    -- Buscar em Decorations
                     local decorations = plot:FindFirstChild("Decorations")
                     if decorations then
                         for _, decorModel in ipairs(decorations:GetChildren()) do
-                            for _, descendant in ipairs(decorModel:GetChildren()) do
+                            for _, descendant in ipairs(decorModel:GetDescendants()) do
                                 pcall(function()
                                     if (descendant:IsA("BasePart") or descendant:IsA("MeshPart")) and not ESPObjects[descendant] then
                                         local rarity = getRarityFromObject(descendant)
@@ -1113,14 +1113,14 @@ local function scanForObjects()
 end
 
 -- ======================== --
---   ESP BASE TIME SYSTEM (OTIMIZADO) --
+--   ESP BASE TIME SYSTEM (OTIMIZADO E CORRIGIDO) --
 -- ======================== --
 local function createBaseTimeESP()
     local plotsFolder = Workspace:FindFirstChild("Plots")
     if not plotsFolder then return function() end end
 
     local lastUpdateTime = 0
-    local UPDATE_INTERVAL = 2  -- Atualiza apenas a cada 2 segundos para reduzir lag
+    local UPDATE_INTERVAL = 1  -- Atualiza a cada segundo para timer preciso
 
     local function findPlayerPlot()
         for _, plot in ipairs(plotsFolder:GetChildren()) do
@@ -1139,11 +1139,11 @@ local function createBaseTimeESP()
 
         local billboard = Instance.new("BillboardGui")
         billboard.Name = "PlotESP_"..plot.Name
-        billboard.Size = UDim2.new(0, 120, 0, 25)  -- Tamanho reduzido
+        billboard.Size = UDim2.new(0, 120, 0, 25)
         billboard.StudsOffset = Vector3.new(0, 3, 0)
         billboard.AlwaysOnTop = true
         billboard.Adornee = mainPart
-        billboard.MaxDistance = 800  -- Distância reduzida para melhor performance
+        billboard.MaxDistance = 800
         billboard.Parent = plot
 
         local frame = Instance.new("Frame")
@@ -1159,13 +1159,13 @@ local function createBaseTimeESP()
         label.BackgroundTransparency = 1
         label.TextScaled = true
         label.Font = Enum.Font.Gotham
-        label.TextSize = 12  -- Tamanho de texto reduzido
+        label.TextSize = 12
         label.TextStrokeTransparency = 0.5
         label.TextStrokeColor3 = Color3.new(0, 0, 0)
         label.Parent = frame
 
         local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 4)  -- Cantos menores
+        corner.CornerRadius = UDim.new(0, 4)
         corner.Parent = frame
 
         frame.Parent = billboard
@@ -1177,7 +1177,7 @@ local function createBaseTimeESP()
     local function updateBaseESP()
         local currentTime = tick()
         if currentTime - lastUpdateTime < UPDATE_INTERVAL then
-            return  -- Pula atualização se não passou tempo suficiente
+            return
         end
         lastUpdateTime = currentTime
 
@@ -1185,18 +1185,14 @@ local function createBaseTimeESP()
 
         pcall(function()
             local playerPlot = findPlayerPlot()
-
-            -- Atualiza apenas plots visíveis próximos ao jogador
             local myChar = LocalPlayer.Character
             local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
 
             for _, plot in ipairs(plotsFolder:GetChildren()) do
                 pcall(function()
-                    -- Verifica distância para otimização
                     if myHRP then
                         local plotPos = plot:FindFirstChild("Main") and plot.Main.Position
                         if plotPos and (myHRP.Position - plotPos).Magnitude > 500 then
-                            -- Remove ESP se muito distante
                             if BaseESPObjects[plot.Name] then
                                 BaseESPObjects[plot.Name]:Destroy()
                                 BaseESPObjects[plot.Name] = nil
@@ -1220,11 +1216,11 @@ local function createBaseTimeESP()
                             if label then
                                 label.Text = isUnlocked and "Unlocked" or timeLabel.Text
                                 if plot.Name == playerPlot then
-                                    label.TextColor3 = Color3.fromRGB(0, 255, 0)  -- Verde para sua base
+                                    label.TextColor3 = Color3.fromRGB(0, 255, 0)
                                 elseif isUnlocked then
-                                    label.TextColor3 = ZENIKAZE_COLOR  -- Cor da UI para desbloqueado
+                                    label.TextColor3 = ZENIKAZE_COLOR
                                 else
-                                    label.TextColor3 = Color3.fromRGB(255, 100, 100)  -- Vermelho para bloqueado
+                                    label.TextColor3 = Color3.fromRGB(255, 100, 100)
                                 end
                             end
                         end
@@ -1452,7 +1448,7 @@ do
             local ox = startPos.X.Offset + d.X
             local oy = startPos.Y.Offset + d.Y
             local nx,ny = clampToScreen(ox,oy,ToggleButton.AbsoluteSize.X,ToggleButton.AbsoluteSize.Y)
-            ToggleButton.Position = UDim2.new(startPos.X.Scale, nx, startPos.Y.Scale, ny)
+            ToggleButton.Position = UDim2.new(0, nx, 0, ny)
         end
     end)
 end
@@ -3248,9 +3244,14 @@ ToggleButton.MouseButton1Click:Connect(function()
     InterfaceVisible = not InterfaceVisible
     MainFrame.Visible = InterfaceVisible
     if InterfaceVisible then
-        MainFrame.Size = UDim2.new(0,60,0,60)
+        -- Animação de zoom in (abertura)
+        MainFrame.Size = UDim2.new(0,10,0,10)
+        MainFrame.Position = UDim2.new(0.5,-5,0.5,-5)
         local animInfo = TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        TweenService:Create(MainFrame, animInfo, {Size=UDim2.new(0,320,0,240)}):Play()
+        local sizeTarget = UDim2.new(0,320,0,240)
+        local posTarget = UDim2.new(0.5,-160,0.5,-120)
+        
+        TweenService:Create(MainFrame, animInfo, {Size=sizeTarget, Position=posTarget}):Play()
     end
 end)
 
@@ -3347,7 +3348,7 @@ end)
 
 task.spawn(function()
     local lastScanTime = 0
-    local SCAN_INTERVAL = 3  -- Escaneia apenas a cada 3 segundos
+    local SCAN_INTERVAL = 2  -- Escaneia a cada 2 segundos
 
     while true do
         local currentTime = tick()
@@ -3357,7 +3358,7 @@ task.spawn(function()
                 scanForPlayers()
             end
 
-            -- Só escaneia objetos ocasionalmente para reduzir lag
+            -- Escanear objetos ESP
             if currentTime - lastScanTime > SCAN_INTERVAL then
                 if ESP_SETTINGS.Enabled and (ESP_SETTINGS.BrainhotsGods or ESP_SETTINGS.BrainhotsSecrets) then
                     scanForObjects()
@@ -3367,7 +3368,20 @@ task.spawn(function()
 
             updateESP()
         end)
-        task.wait(1)  -- Reduzido de 2 para 1 segundo para melhor responsividade do ESP de players
+        task.wait(1)
+    end
+end)
+
+-- Loop separado para Base ESP
+task.spawn(function()
+    local baseESPUpdate = createBaseTimeESP()
+    while true do
+        pcall(function()
+            if ScriptStatus.BaseESP then
+                baseESPUpdate()
+            end
+        end)
+        task.wait(1)
     end
 end)
 
