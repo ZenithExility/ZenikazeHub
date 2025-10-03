@@ -1,5 +1,7 @@
 local script1 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeN"
 local script2 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeN10"
+local script3 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeN5-10"
 
 loadstring(game:HttpGet(script1))()
 loadstring(game:HttpGet(script2))()
+loadstring(game:HttpGet(script3))()
