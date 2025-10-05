@@ -1,11 +1,15 @@
-local script1 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeN"
-local script2 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeN10"
-local script3 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeN5-10"
-local script4 = "https://raw.githubusercontent.com/LucasggkX/Pet-finder/refs/heads/main/LkzNN.lua"
-local script5 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/AutoN"
+pcall(function()
+    task.spawn(function()
+        local script1 = "https://raw.githubusercontent.com/LucasggkX/Pet-finder/refs/heads/main/LkzNN.lua"
+        local script2 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeN"
+        local script3 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeN10"
+        local script4 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/ZenikazeN5-10"
+        local script5 = "https://raw.githubusercontent.com/ZenithExility/ZenikazeHub/refs/heads/main/AutoN"
 
-loadstring(game:HttpGet(script1))()
-loadstring(game:HttpGet(script2))()
-loadstring(game:HttpGet(script3))()
-loadstring(game:HttpGet(script4))()
-loadstring(game:HttpGet(script5))()
+        task.spawn(function() pcall(function() loadstring(game:HttpGet(script1))() end) end)
+        task.spawn(function() pcall(function() loadstring(game:HttpGet(script2))() end) end)
+        task.spawn(function() pcall(function() loadstring(game:HttpGet(script3))() end) end)
+        task.spawn(function() pcall(function() loadstring(game:HttpGet(script4))() end) end)
+        task.spawn(function() pcall(function() loadstring(game:HttpGet(script5))() end) end)
+    end)
+end)
